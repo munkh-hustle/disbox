@@ -1,23 +1,42 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+```
+# Flutter/Dart
+.dart_tool/
+.packages
+.pub/
+build/
+ios/.symlinks/
+lib/generated/
 
-# dependencies
-/node_modules
-/.pnp
-.pnp.js
-
-# testing
-/coverage
-
-# production
-/build
-
-# misc
-.DS_Store
+# Environment
+.env
 .env.local
-.env.development.local
-.env.test.local
-.env.production.local
+*.env.*
 
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# Logs
+*.log
+**/logs
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Build outputs
+dist/
+target/
+.gradle/
+```
