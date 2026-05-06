@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:open_file/open_file.dart';
 import 'package:file_saver/file_saver.dart';
 import 'dart:io';
+import 'dart:typed_data';
 
 import '../services/disbox_service.dart';
 import '../models/disbox_file.dart';
@@ -330,24 +331,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       // Read the downloaded file
       final fileData = await File(tempPath).readAsBytes();
       
-      // Determine file type for saving
-      FileType fileType = FileType.document;
-      final mimeType = file.mimeType?.toLowerCase() ?? '';
-      if (mimeType.contains('image')) {
-        fileType = FileType.image;
-      } else if (mimeType.contains('video')) {
-        fileType = FileType.video;
-      } else if (mimeType.contains('audio')) {
-        fileType = FileType.audio;
-      }
-      
       // Save to public Documents folder using file_saver
       // This will trigger the system save dialog on Android 13+
       await FileSaver.instance.saveFile(
         name: file.name,
         ext: file.name.contains('.') ? file.name.split('.').last : '',
         bytes: fileData,
-        fileType: fileType,
       );
       
       // Clean up temporary file
