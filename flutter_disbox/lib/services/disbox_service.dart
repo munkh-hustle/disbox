@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
@@ -148,6 +149,12 @@ class DisboxService extends ChangeNotifier {
     
     print('[DisboxService] Webhook URL set, accountId: $_accountId');
     
+    // Save webhook URL to SharedPreferences so FileBrowserScreen can load it
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('webhook_url', webhookUrl);
+    await prefs.setString('account_id', _accountId);
+    print('[DisboxService] Saved webhook URL to SharedPreferences');
+    
     // Load existing file tree from local storage
     await _loadFileTree();
     
@@ -196,6 +203,13 @@ class DisboxService extends ChangeNotifier {
       _accountId = _hashWebhookUrl(webhookUrl);
       
       print('[DisboxService] Webhook URL imported, accountId: $_accountId');
+      
+      // Save webhook URL to SharedPreferences so FileBrowserScreen can load it
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('webhook_url', webhookUrl);
+      await prefs.setString('account_id', _accountId);
+      
+      print('[DisboxService] Saved webhook URL to SharedPreferences');
       
       // Check if file tree data is included
       if (data.containsKey('file_tree') && data['file_tree'] != null) {

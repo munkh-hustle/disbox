@@ -1,11 +1,20 @@
 ```
-# Flutter/Dart specific
+# Flutter/Dart specific ignores
 .dart_tool/
 .build/
+.flutter-plugins
+.flutter-plugin-dependencies
 .packages
 pubspec.lock
-*.g.dart
-*.freezed.dart
+
+# Compiled and build artifacts
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
 
 # Dependencies
 vendor/
@@ -14,20 +23,25 @@ vendor/
 *.log
 *.tmp
 *.swp
+*.swo
 
 # Environment
 .env
 .env.local
-.env.*
+*.env.*
 
 # Editors
-.vscode/
 .idea/
-*.iml
-*.ipr
-*.iws
+*.swp
+*.swo
 
-# OS generated files
+# Coverage
+coverage/
+*.coverage
+
+# macOS
 .DS_Store
+
+# Windows
 Thumbs.db
 ```
