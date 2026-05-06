@@ -133,6 +133,24 @@ class DisboxService {
     return digest.toString().substring(0, 16); // Use first 16 chars
   }
 
+  /// Recursively convert Map<dynamic, dynamic> to Map<String, dynamic>
+  /// This is needed because Hive/JSON returns Map<dynamic, dynamic> which can't be directly cast
+  Map<String, dynamic> _convertMapToStringKeys(dynamic data) {
+    if (data is Map) {
+      final result = <String, dynamic>{};
+      for (final entry in data.entries) {
+        final key = entry.key.toString();
+        final value = _convertMapToStringKeys(entry.value);
+        result[key] = value;
+      }
+      return result;
+    } else if (data is List) {
+      return data.map((item) => _convertMapToStringKeys(item)).toList();
+    } else {
+      return data;
+    }
+  }
+
   /// Get the base URL for webhook API calls
   String _getWebhookApiUrl() {
     if (_webhookUrl == null) {
@@ -170,8 +188,9 @@ class DisboxService {
     final storedData = _fileTreeBox!.get(_accountId);
     
     if (storedData != null) {
-      // Decode from JSON string
-      _fileTree = jsonDecode(storedData as String) as Map<String, dynamic>;
+      // Decode from JSON string and convert Map<dynamic, dynamic> to Map<String, dynamic>
+      final decoded = jsonDecode(storedData as String);
+      _fileTree = _convertMapToStringKeys(decoded);
       final childrenCount = (_fileTree!['children'] as Map?)?.length ?? 0;
       print('[DisboxService] Loaded file tree with $childrenCount items');
     } else {
