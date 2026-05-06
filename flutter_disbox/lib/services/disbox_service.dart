@@ -170,7 +170,7 @@ class DisboxService {
 
   /// Recursively convert Map<dynamic, dynamic> to Map<String, dynamic>
   /// This is needed because Hive/JSON returns Map<dynamic, dynamic> which can't be directly cast
-  Map<String, dynamic>? _convertMapToStringKeys(dynamic data) {
+  dynamic _convertMapToStringKeys(dynamic data) {
     if (data == null) {
       return null;
     } else if (data is Map) {
