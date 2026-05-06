@@ -472,7 +472,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         );
       }
     } catch (e) {
-      if (mounted && progressDialog.mounted) Navigator.pop(context); // Close progress dialog
+      if (mounted) Navigator.pop(context); // Close progress dialog
       
       // Ensure temp file is cleaned up on error too
       if (tempPath != null) {
