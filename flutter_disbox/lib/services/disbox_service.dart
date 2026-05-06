@@ -65,18 +65,24 @@ class DisboxService {
   /// The account ID is a SHA256 hash of the webhook URL for local identification.
   /// Also loads existing file tree from local storage.
   Future<void> setWebhookUrl(String webhookUrl) async {
+    print('[DisboxService] Setting webhook URL...');
+    
     // Validate webhook URL format
     if (!_isValidWebhookUrl(webhookUrl)) {
+      print('[DisboxService ERROR] Invalid webhook URL format');
       throw FormatException('Invalid Discord webhook URL format');
     }
     
     // Initialize Hive if not already done
     if (_fileTreeBox == null) {
+      print('[DisboxService] Initializing Hive...');
       await _initHive();
     }
     
     _webhookUrl = webhookUrl;
     _accountId = _hashWebhookUrl(webhookUrl);
+    
+    print('[DisboxService] Webhook URL set, accountId: $_accountId');
     
     // Load existing file tree from local storage
     await _loadFileTree();
@@ -130,11 +136,15 @@ class DisboxService {
   /// Get the base URL for webhook API calls
   String _getWebhookApiUrl() {
     if (_webhookUrl == null) {
-      throw StateError('Webhook URL not configured');
+      print('[DisboxService ERROR] Attempting to get webhook API URL but webhook is not configured');
+      print('[DisboxService ERROR] _webhookUrl: $_webhookUrl');
+      print('[DisboxService ERROR] _accountId: $_accountId');
+      throw StateError('Webhook URL not configured. Please call setWebhookUrl() first.');
     }
     
     final creds = _parseWebhookUrl(_webhookUrl!);
     if (creds == null) {
+      print('[DisboxService ERROR] Failed to parse webhook URL: $_webhookUrl');
       throw StateError('Invalid webhook URL');
     }
     
@@ -149,10 +159,12 @@ class DisboxService {
   /// locally. The file tree is stored in Hive indexed by the account ID.
   Future<void> _loadFileTree() async {
     if (_webhookUrl == null || _fileTreeBox == null) {
+      print('[DisboxService] Cannot load file tree: webhook or Hive not initialized');
       return;
     }
 
-    print('Loading file tree from local storage...');
+    print('[DisboxService] Loading file tree from local storage...');
+    print('[DisboxService] Account ID: $_accountId');
     
     // Try to load file tree from Hive using account ID as key
     final storedData = _fileTreeBox!.get(_accountId);
@@ -161,7 +173,7 @@ class DisboxService {
       // Decode from JSON string
       _fileTree = jsonDecode(storedData as String) as Map<String, dynamic>;
       final childrenCount = (_fileTree!['children'] as Map?)?.length ?? 0;
-      print('Loaded file tree with $childrenCount items');
+      print('[DisboxService] Loaded file tree with $childrenCount items');
     } else {
       // Initialize empty file tree if none found
       _fileTree = {
@@ -172,7 +184,7 @@ class DisboxService {
         'created_at': DateTime.now().toIso8601String(),
         'updated_at': DateTime.now().toIso8601String(),
       };
-      print('Initialized new empty file tree');
+      print('[DisboxService] Initialized new empty file tree');
     }
   }
 
@@ -181,6 +193,7 @@ class DisboxService {
   /// Called after creating, updating, or deleting files to persist changes.
   Future<void> _saveFileTree() async {
     if (_webhookUrl == null || _fileTreeBox == null || _fileTree == null) {
+      print('[DisboxService] Cannot save file tree: webhook, Hive, or fileTree not initialized');
       return;
     }
 
@@ -188,9 +201,9 @@ class DisboxService {
       // Encode to JSON string and save to Hive
       final jsonData = jsonEncode(_fileTree);
       await _fileTreeBox!.put(_accountId, jsonData);
-      print('File tree saved to local storage');
+      print('[DisboxService] File tree saved to local storage');
     } catch (e) {
-      print('Failed to save file tree: $e');
+      print('[DisboxService ERROR] Failed to save file tree: $e');
     }
   }
 
@@ -213,7 +226,9 @@ class DisboxService {
     ProgressCallback? onProgress,
   }) async {
     if (!isConfigured) {
-      throw StateError('Webhook URL not configured');
+      print('[DisboxService ERROR] uploadFile called but webhook not configured');
+      print('[DisboxService ERROR] isConfigured: $isConfigured, _webhookUrl: $_webhookUrl');
+      throw StateError('Webhook URL not configured. Please call setWebhookUrl() first.');
     }
 
     final filename = path.basename(file.path);
@@ -316,7 +331,8 @@ class DisboxService {
     ProgressCallback? onProgress,
   }) async {
     if (!isConfigured) {
-      throw StateError('Webhook URL not configured');
+      print('[DisboxService ERROR] downloadFile called but webhook not configured');
+      throw StateError('Webhook URL not configured. Please call setWebhookUrl() first.');
     }
 
     if (file.isFolder) {
@@ -355,7 +371,8 @@ class DisboxService {
   /// Deletes all chunk messages and the metadata message.
   Future<void> deleteFile(DisboxFile file) async {
     if (!isConfigured) {
-      throw StateError('Webhook URL not configured');
+      print('[DisboxService ERROR] deleteFile called but webhook not configured');
+      throw StateError('Webhook URL not configured. Please call setWebhookUrl() first.');
     }
 
     print('Deleting: ${file.name}');
@@ -390,10 +407,12 @@ class DisboxService {
   /// [folderPath] - The virtual folder path to list (default: root "/")
   Future<List<DisboxFile>> listFiles({String folderPath = '/'}) async {
     if (!isConfigured) {
-      throw StateError('Webhook URL not configured');
+      print('[DisboxService ERROR] listFiles called but webhook not configured');
+      print('[DisboxService ERROR] isConfigured: $isConfigured, _webhookUrl: $_webhookUrl, _accountId: $_accountId');
+      throw StateError('Webhook URL not configured. Please call setWebhookUrl() first.');
     }
 
-    print('Listing files in: $folderPath');
+    print('[DisboxService] Listing files in: $folderPath');
 
     // Use file tree from backend server instead of fetching Discord messages
     if (_fileTree == null) {
@@ -498,7 +517,8 @@ class DisboxService {
   /// Create a folder (virtual - stored via backend server).
   Future<DisboxFile> createFolder(String name, {String parentPath = '/'}) async {
     if (!isConfigured) {
-      throw StateError('Webhook URL not configured');
+      print('[DisboxService ERROR] createFolder called but webhook not configured');
+      throw StateError('Webhook URL not configured. Please call setWebhookUrl() first.');
     }
 
     final folderPath = _normalizePath('$parentPath/$name');
@@ -556,7 +576,8 @@ class DisboxService {
   /// Rename a file or folder.
   Future<DisboxFile> renameFile(DisboxFile file, String newName) async {
     if (!isConfigured) {
-      throw StateError('Webhook URL not configured');
+      print('[DisboxService ERROR] renameFile called but webhook not configured');
+      throw StateError('Webhook URL not configured. Please call setWebhookUrl() first.');
     }
 
     final parentPath = _getParentPath(file.path);
