@@ -36,9 +36,9 @@ class DisboxService {
   final Map<String, DisboxFile> _fileCache = {};
 
   DisboxService() : _dio = Dio() {
-    _dio.options.connectTimeout = const Duration(seconds: 30);
-    _dio.options.receiveTimeout = const Duration(seconds: 60);
-    _dio.options.sendTimeout = const Duration(seconds: 60);
+    _dio.options.connectTimeout = const Duration(minutes: 2);
+    _dio.options.receiveTimeout = const Duration(minutes: 5);
+    _dio.options.sendTimeout = const Duration(minutes: 5);
     
     // Add interceptor for logging and error handling
     _dio.interceptors.add(InterceptorsWrapper(
