@@ -1,36 +1,56 @@
 ```
-# Build artifacts
-/build/
-/dist/
-/out/
+# Flutter/Dart specific ignores
+.dart_tool/
+.build/
+.pub/
+*.g.dart
+*.freezed.dart
+*.config.dart
 
 # Dependencies
-/.dart_tool/
-/pub/
 node_modules/
+vendor/
 
-# Logs
+# Logs and temp files
 *.log
+*.tmp
+*.swp
 
 # Environment variables
 .env
 .env.local
-*.env
+*.env.*
 
-# IDE files
+# Editors
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# OS files
+# OS generated files
 .DS_Store
 Thumbs.db
 
-# Coverage
-/coverage/
+# Build outputs
+build/
+dist/
+target/
+
+# Python related (if any Python in project)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Coverage reports
+coverage/
+htmlcov/
+.coverage
 
 # Temporary files
 *.tmp
 *.temp
+*~
 ```

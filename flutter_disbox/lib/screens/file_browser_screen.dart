@@ -4,7 +4,13 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:open_file/open_file.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:share_plus/share_plus.dart';
 import 'dart:io';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:math' as math;
 
 import '../services/disbox_service.dart';
 import '../models/disbox_file.dart';
@@ -295,38 +301,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     }
   }
 
-  /// Download a file
+  /// Download a file to Documents folder using file_saver package
   Future<void> _downloadFile(DisboxFile file) async {
-    // Get downloads directory - use public Downloads folder
-    Directory? directory;
-    
-    // Try to get the public Downloads directory first
-    try {
-      // For Android 10+ we need to use external storage directories
-      final externalDirs = await getExternalStorageDirectories(
-        type: StorageDirectory.downloads,
-      );
-      if (externalDirs != null && externalDirs.isNotEmpty) {
-        directory = externalDirs.first;
-      }
-    } catch (e) {
-      print('Error getting downloads directory: $e');
-    }
-    
-    // Fallback to app's external storage directory
-    if (directory == null) {
-      directory = await getExternalStorageDirectory();
-    }
-    
-    if (directory == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cannot access storage')),
-      );
-      return;
-    }
-
-    final outputPath = '${directory.path}/${file.name}';
-    
     // Show progress dialog with stream
     final progressDialog = ProgressDialog(
       title: 'Downloading ${file.name}',
@@ -342,9 +318,36 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     );
 
     try {
+      // Request storage permission for Android 12 and below
+      if (Platform.isAndroid) {
+        final androidInfo = await DeviceInfoPlugin().androidInfo;
+        if (androidInfo.version.sdkInt <= 28) {
+          var status = await Permission.storage.status;
+          if (!status.isGranted) {
+            status = await Permission.storage.request();
+            if (!status.isGranted) {
+              throw Exception('Storage permission is required to save files');
+            }
+          }
+        } else if (androidInfo.version.sdkInt >= 30) {
+          // For Android 11+, request MANAGE_EXTERNAL_STORAGE
+          var status = await Permission.manageExternalStorage.status;
+          if (!status.isGranted) {
+            status = await Permission.manageExternalStorage.request();
+            if (!status.isGranted) {
+              throw Exception('Manage external storage permission is required');
+            }
+          }
+        }
+      }
+
+      // Download to temporary file first
+      final tempDir = await getTemporaryDirectory();
+      final tempPath = '${tempDir.path}/${file.name}';
+      
       await _disboxService.downloadFile(
         file,
-        outputPath,
+        tempPath,
         onProgress: (current, total) {
           // Progress is already being sent via the stream
         },
@@ -352,65 +355,93 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
       if (mounted) Navigator.pop(context); // Close progress dialog
       
-      // Show success message with option to open file
-      if (mounted) {
-        final openResult = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Download Complete'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('File downloaded successfully!'),
-                const SizedBox(height: 8),
-                Text(
-                  'Location: ${outputPath}',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  'Size: ${_formatFileSize(file.size ?? 0)}',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('OK'),
-              ),
-              ElevatedButton.icon(
-                onPressed: () => Navigator.pop(context, true),
-                icon: const Icon(Icons.open_in_browser),
-                label: const Text('Open File'),
-              ),
-            ],
-          ),
-        );
+      // Read the downloaded file
+      final fileData = await File(tempPath).readAsBytes();
+      
+      print('[FileCopy] Saving file: ${file.name} (${fileData.length} bytes)');
+      
+      // Save to public Documents folder
+      String? savedPath;
+      String savedFileName = file.name; // Track the final saved filename
+      try {
+        // Try to access the public Documents directory
+        Directory? documentsDir;
         
-        if (openResult == true) {
-          // Try to open the file
-          final result = await OpenFile.open(outputPath);
-          if (result.type != ResultType.done) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Cannot open file: ${result.message}')),
-              );
-            }
+        if (Platform.isAndroid) {
+          final androidInfo = await DeviceInfoPlugin().androidInfo;
+          if (androidInfo.version.sdkInt >= 29) {
+            // For Android 10+, use the specific path to Documents
+            documentsDir = Directory('/storage/emulated/0/Documents/Disbox');
+          } else {
+            // For older versions, use external storage directory
+            documentsDir = Directory('/storage/emulated/0/Documents/Disbox');
           }
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Saved to: $outputPath'),
-              action: SnackBarAction(
-                label: 'Open',
-                onPressed: () => OpenFile.open(outputPath),
-              ),
-            ),
-          );
+          documentsDir = await getApplicationDocumentsDirectory();
         }
+        
+        // Create the Disbox subdirectory if it doesn't exist
+        if (!await documentsDir.exists()) {
+          await documentsDir.create(recursive: true);
+        }
+        
+        // Generate unique filename if file already exists
+        String finalFileName = file.name;
+        String finalFilePath = '${documentsDir.path}/$finalFileName';
+        int counter = 1;
+        
+        while (await File(finalFilePath).exists()) {
+          final nameParts = file.name.split('.');
+          if (nameParts.length > 1) {
+            final ext = nameParts.removeLast();
+            final baseName = nameParts.join('.');
+            finalFileName = '${baseName}_$counter.$ext';
+          } else {
+            finalFileName = '${file.name}_$counter';
+          }
+          finalFilePath = '${documentsDir.path}/$finalFileName';
+          counter++;
+        }
+        
+        // Update savedFileName for the success message
+        savedFileName = finalFileName;
+        
+        // Write the file
+        final savedFile = File(finalFilePath);
+        await savedFile.writeAsBytes(fileData);
+        savedPath = savedFile.path;
+        
+        print('[FileCopy] File saved to: $savedPath');
+        
+        // Notify media scanner about the new file (for Android)
+        if (Platform.isAndroid) {
+          // This helps the file appear in gallery/file manager apps
+          // We can't directly call MediaScannerConnection here without platform channel
+          // But creating the file in Documents should be enough
+        }
+      } catch (e) {
+        print('[FileCopy ERROR] Failed to save file: $e');
+        rethrow;
+      }
+      
+      // Clean up temporary file
+      try {
+        await File(tempPath).delete();
+      } catch (e) {
+        print('Warning: Could not delete temp file: $e');
+      }
+      
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$savedFileName saved to Documents/Disbox'),
+            action: SnackBarAction(
+              label: 'OK',
+              onPressed: () {},
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) Navigator.pop(context); // Close progress dialog
@@ -505,10 +536,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               title: const Text('Share'),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: Implement share functionality
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Share feature coming soon')),
-                );
+                _shareMetadata(file);
               },
             ),
             ListTile(
@@ -620,12 +648,232 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     );
   }
 
+  /// Export metadata (webhook URL and account ID) to share with another device
+  Future<void> _exportMetadata() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final webhookUrl = prefs.getString('webhook_url');
+      final accountId = prefs.getString('account_id');
+      
+      if (webhookUrl == null || accountId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No configuration found to export')),
+        );
+        return;
+      }
+      
+      // Get the entire file tree from local storage as a list of DisboxFile
+      final fileList = await _disboxService.getFileTreeList();
+      
+      // Convert DisboxFile list to JSON-serializable format
+      final fileListJson = fileList.map((file) => file.toJson()).toList();
+
+      // Create JSON data with config AND file tree
+      final jsonData = jsonEncode({
+        'webhook_url': webhookUrl,
+        'account_id': accountId,
+        'exported_at': DateTime.now().toIso8601String(),
+        'version': '2.0',
+        'file_tree': fileListJson,
+      });
+      
+      // Share the JSON data
+      final result = await Share.shareXFiles(
+        [XFile.fromData(
+          Uint8List.fromList(jsonData.codeUnits),
+          name: 'disbox_config.json',
+          mimeType: 'application/json',
+        )],
+        subject: 'Disbox Configuration',
+        text: 'Disbox configuration file with file tree. Import this on your other device to sync your Disbox storage.',
+      );
+      
+      if (result.status == ShareResultStatus.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Configuration exported successfully')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Export failed: $e')),
+      );
+    }
+  }
+
+  /// Import metadata from a shared config file
+  Future<void> _importMetadata() async {
+    try {
+      // Pick the config file
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        allowMultiple: false,
+      );
+      
+      if (result == null || result.files.isEmpty) {
+        return;
+      }
+      
+      final filePath = result.files.first.path;
+      if (filePath == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to access selected file')),
+        );
+        return;
+      }
+      
+      // Read and parse the file
+      final fileContent = await File(filePath).readAsString();
+      final data = jsonDecode(fileContent) as Map<String, dynamic>;
+      
+      // Validate the data
+      if (!data.containsKey('webhook_url') || !data.containsKey('account_id')) {
+        throw Exception('Invalid configuration file format');
+      }
+      
+      // Trim whitespace from webhook URL (common issue when copying/sharing)
+      final webhookUrl = (data['webhook_url'] as String).trim();
+      final accountId = (data['account_id'] as String).trim();
+      
+      // Confirm import
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Import Configuration'),
+          content: Text(
+            'This will replace your current Disbox configuration with the one from the file.\n\n'
+            'Account ID: ${accountId.substring(0, math.min(20, accountId.length))}...\n\n'
+            'Do you want to continue?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Import'),
+            ),
+          ],
+        ),
+      );
+      
+      if (confirmed != true) {
+        return;
+      }
+      
+      // Save the new configuration
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('webhook_url', webhookUrl);
+      await prefs.setString('account_id', accountId);
+
+      // Import file tree if available (version 2.0+)
+      if (data.containsKey('file_tree') && data['file_tree'] is List) {
+        final fileListJson = data['file_tree'] as List;
+        
+        // Convert JSON list to DisboxFile objects
+        final fileList = <DisboxFile>[];
+        for (final item in fileListJson) {
+          if (item is Map<String, dynamic>) {
+            fileList.add(DisboxFile.fromJson(item));
+          }
+        }
+        
+        // Save the imported file tree to local storage
+        await _disboxService.saveFileTreeFromList(fileList);
+      }
+      
+      
+      // Reinitialize the service with the new configuration
+      await _disboxService.setWebhookUrl(webhookUrl);
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Configuration and files imported successfully')),
+      );
+      
+      // Reload files
+      setState(() {
+        _currentPath = '/';
+      });
+      await _loadFiles();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Import failed: $e')),
+      );
+    }
+  }
+
+  /// Share metadata for a specific file (for advanced users)
+  Future<void> _shareMetadata(DisboxFile file) async {
+    try {
+      // Create JSON data for the file
+      final jsonData = jsonEncode({
+        'name': file.name,
+        'path': file.path,
+        'isFolder': file.isFolder,
+        'size': file.size,
+        'createdAt': file.createdAt.toIso8601String(),
+        'chunkMessageIds': file.chunkMessageIds,
+        'version': '1.0',
+      });
+      
+      // Share the JSON data
+      await Share.shareXFiles(
+        [XFile.fromData(
+          Uint8List.fromList(jsonData.codeUnits),
+          name: '${file.name}.meta.json',
+          mimeType: 'application/json',
+        )],
+        subject: 'Disbox File Metadata: ${file.name}',
+        text: 'Metadata for file "${file.name}" from Disbox.',
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Share failed: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(_currentPath == '/' ? 'Disbox' : _currentPath),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.import_export),
+            onPressed: () {
+              showModalBottomSheet(
+                context: context,
+                builder: (context) => SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.upload_file, color: Colors.blue),
+                        title: const Text('Export Configuration'),
+                        subtitle: const Text('Share webhook URL to another device'),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _exportMetadata();
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.download, color: Colors.green),
+                        title: const Text('Import Configuration'),
+                        subtitle: const Text('Load config from shared file'),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _importMetadata();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+            tooltip: 'Export/Import',
+          ),
           IconButton(
             icon: const Icon(Icons.folder_open),
             onPressed: _createFolder,
