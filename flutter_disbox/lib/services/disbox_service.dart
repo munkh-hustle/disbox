@@ -9,6 +9,7 @@ import 'package:dio/dio.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path/path.dart' as path;
 import 'package:rxdart/rxdart.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/disbox_file.dart';
 import '../utils/chunk_utils.dart';
@@ -23,7 +24,7 @@ typedef ProgressCallback = void Function(int current, int total);
 /// URL is never sent to any third-party server.
 /// 
 /// File tree metadata is stored locally using Hive for persistence across app restarts.
-class DisboxService {
+class DisboxService extends ChangeNotifier {
   final Dio _dio;
   String? _webhookUrl;
   String? _accountId; // Hash of webhook URL for local identification
@@ -153,6 +154,69 @@ class DisboxService {
     // Save webhook URL securely (in production, use flutter_secure_storage)
     // await secureStorage.write(key: 'webhook_url', value: webhookUrl);
     // await secureStorage.write(key: 'account_id', value: _accountId);
+  }
+
+  /// Import webhook URL and file tree from a JSON config file.
+  /// 
+  /// The JSON file should contain:
+  /// - webhook_url: The Discord webhook URL
+  /// - file_tree: (optional) File tree metadata to import
+  /// 
+  /// Returns true if import was successful, false otherwise.
+  Future<bool> importConfig(File jsonFile) async {
+    try {
+      print('[DisboxService] Importing config from: ${jsonFile.path}');
+      
+      final content = await jsonFile.readAsString();
+      final data = jsonDecode(content);
+      
+      if (data is! Map) {
+        throw Exception("JSON must be an object");
+      }
+      
+      final webhookUrl = data['webhook_url'] as String?;
+      
+      if (webhookUrl == null || webhookUrl.isEmpty) {
+        throw Exception("JSON must contain 'webhook_url' field");
+      }
+      
+      // Validate webhook URL format
+      if (!_isValidWebhookUrl(webhookUrl)) {
+        throw Exception("Invalid webhook URL format in JSON");
+      }
+      
+      // Initialize Hive
+      if (_fileTreeBox == null) {
+        print('[DisboxService] Initializing Hive...');
+        await _initHive();
+      }
+      
+      // Set webhook URL
+      _webhookUrl = webhookUrl;
+      _accountId = _hashWebhookUrl(webhookUrl);
+      
+      print('[DisboxService] Webhook URL imported, accountId: $_accountId');
+      
+      // Check if file tree data is included
+      if (data.containsKey('file_tree') && data['file_tree'] != null) {
+        print('[DisboxService] Importing file tree from JSON...');
+        _fileTree = _convertMapToStringKeys(data['file_tree']);
+        
+        // Save imported file tree to Hive
+        await _saveFileTree();
+        print('[DisboxService] Imported file tree saved to local storage');
+      } else {
+        // Load existing file tree from local storage (if any)
+        await _loadFileTree();
+      }
+      
+      notifyListeners();
+      print('[DisboxService] Config import successful');
+      return true;
+    } catch (e) {
+      print('[DisboxService ERROR] Failed to import config: $e');
+      return false;
+    }
   }
 
   /// Check if webhook URL is configured
