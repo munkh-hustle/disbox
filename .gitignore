@@ -1,47 +1,28 @@
 ```
-# Flutter/Dart specific ignores
-.dart_tool/
-.build/
-.flutter-plugins
-.flutter-plugin-dependencies
-.packages
-pubspec.lock
-
-# Compiled and build artifacts
-*.o
-*.obj
-*.a
-*.lib
-*.so
-*.dylib
-*.dll
-
-# Dependencies
-vendor/
-
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-*.swo
+# Build artifacts
+/build/
+/ios/.symlinks
+/android/.gradle
+/android/build
+/android/app/build
+/pubspec.lock
 
 # Environment
 .env
 .env.local
-*.env.*
+.env.*
+!.env.example
 
-# Editors
+# IDE files
+.vscode/
 .idea/
+*.iml
+*.ipr
+*.iws
 *.swp
 *.swo
 
-# Coverage
-coverage/
-*.coverage
-
-# macOS
+# OS generated files
 .DS_Store
-
-# Windows
 Thumbs.db
 ```

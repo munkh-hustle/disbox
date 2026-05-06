@@ -214,7 +214,14 @@ class DisboxService extends ChangeNotifier {
       // Check if file tree data is included
       if (data.containsKey('file_tree') && data['file_tree'] != null) {
         print('[DisboxService] Importing file tree from JSON...');
-        _fileTree = _convertMapToStringKeys(data['file_tree']);
+        
+        // Ensure file_tree is a Map, not a List
+        final fileTreeData = data['file_tree'];
+        if (fileTreeData is! Map) {
+          throw Exception("'file_tree' must be an object, not a ${fileTreeData.runtimeType}");
+        }
+        
+        _fileTree = _convertMapToStringKeys(fileTreeData) as Map<String, dynamic>?;
         
         // Save imported file tree to Hive
         await _saveFileTree();
