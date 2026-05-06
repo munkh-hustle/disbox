@@ -321,7 +321,7 @@ class DisboxService {
       path: path,
       isFolder: isFolder,
       size: size,
-      mimeType: isFolder ? null : _getMimeType(name),
+      mimeType: isFolder ? null : _detectMimeType(name),
       chunkMessageIds: chunkIds?.cast<String>() ?? [],
       createdAt: createdAtStr != null ? DateTime.tryParse(createdAtStr) ?? DateTime.now() : DateTime.now(),
       modifiedAt: DateTime.now(),

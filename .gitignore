@@ -1,40 +1,56 @@
 ```
-# Flutter/Dart specific
+# Flutter/Dart specific ignores
 .dart_tool/
-.packages
+.build/
+.pub/
 *.g.dart
 *.freezed.dart
+*.config.dart
 
-# Build outputs
-build/
-**/ios/Flutter/.last_build_id
+# Dependencies
+node_modules/
+vendor/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
 
 # Environment variables
 .env
 .env.local
 *.env.*
 
-# Logs
-*.log
-**/logs
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# IDE specific
+# Editors
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Dependencies
-vendor/
+# OS generated files
+.DS_Store
+Thumbs.db
 
-# Coverage
+# Build outputs
+build/
+dist/
+target/
+
+# Python related (if any Python in project)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Coverage reports
 coverage/
-*.lcov
+htmlcov/
+.coverage
 
-# Local configuration
-local.properties
+# Temporary files
+*.tmp
+*.temp
+*~
 ```
