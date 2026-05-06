@@ -1,28 +1,29 @@
 ```
-# Flutter/Dart specific
-.dart_tool/
-.packages
-.pub-cache/
-pubspec.lock
-build/
-**/ios/.generated/
-**/android/.generated/
+# Build artifacts
+/build/
+/bin/
+/obj/
 
-# IDE
-.vscode/
-.idea/
-*.iml
-*.ipr
-*.iws
+# Dependencies
+.pub-cache/
+.packages
+
+# Logs
+*.log
 
 # Environment
 .env
 .env.local
 *.env.*
 
-# Logs
-*.log
-**/logs
+# IDE files
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+*.swp
+*.swo
 
 # OS generated files
 .DS_Store
