@@ -773,13 +773,25 @@ class DisboxService {
         final isFolder = childNode['type'] == 'directory';
         
         // Parse chunk message IDs from content (for files)
+        // Handle both storage formats: 
+        // - New format (from import): 'chunk_message_ids' as List
+        // - Old format (from upload): 'content' as JSON-encoded string
         List<String> chunkMessageIds = [];
-        if (!isFolder && childNode['content'] != null) {
-          try {
-            final contentList = jsonDecode(childNode['content'] as String) as List;
-            chunkMessageIds = contentList.map((id) => id.toString()).toList();
-          } catch (e) {
-            print('Warning: Failed to parse content for $name: $e');
+        if (!isFolder) {
+          if (childNode.containsKey('chunk_message_ids')) {
+            // New format from import
+            final chunkIdsValue = childNode['chunk_message_ids'];
+            if (chunkIdsValue is List) {
+              chunkMessageIds = chunkIdsValue.map((id) => id.toString()).toList();
+            }
+          } else if (childNode['content'] != null) {
+            // Old format from upload - content is JSON-encoded string
+            try {
+              final contentList = jsonDecode(childNode['content'] as String) as List;
+              chunkMessageIds = contentList.map((id) => id.toString()).toList();
+            } catch (e) {
+              print('Warning: Failed to parse content for $name: $e');
+            }
           }
         }
 
