@@ -662,12 +662,31 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         return;
       }
       
-      // Create JSON data
+      // Get the entire file tree from local storage
+      final fileTree = await _service.getFileTree();
+      
+      // Convert file tree to list of maps for JSON serialization
+      final fileList = <Map<String, dynamic>>[];
+      for (final entry in fileTree.entries) {
+        final node = entry.value;
+        fileList.add({
+          'path': entry.key,
+          'name': node.name,
+          'isFolder': node.isFolder,
+          'size': node.size,
+          'messageId': node.messageId,
+          'createdAt': node.createdAt?.toIso8601String(),
+          'metadata': node.metadata,
+        });
+      }
+
+      // Create JSON data with config AND file tree
       final jsonData = jsonEncode({
         'webhook_url': webhookUrl,
         'account_id': accountId,
         'exported_at': DateTime.now().toIso8601String(),
-        'version': '1.0',
+        'version': '2.0',
+        'file_tree': fileList,
       });
       
       // Share the JSON data
@@ -678,7 +697,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           mimeType: 'application/json',
         )],
         subject: 'Disbox Configuration',
-        text: 'Disbox configuration file. Import this on your other device to sync your Disbox storage.',
+        text: 'Disbox configuration file with file tree. Import this on your other device to sync your Disbox storage.',
       );
       
       if (result.status == ShareResultStatus.success) {
@@ -724,8 +743,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         throw Exception('Invalid configuration file format');
       }
       
-      final webhookUrl = data['webhook_url'] as String;
-      final accountId = data['account_id'] as String;
+      // Trim whitespace from webhook URL (common issue when copying/sharing)
+      final webhookUrl = (data['webhook_url'] as String).trim();
+      final accountId = (data['account_id'] as String).trim();
       
       // Confirm import
       final confirmed = await showDialog<bool>(
@@ -759,11 +779,37 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       await prefs.setString('webhook_url', webhookUrl);
       await prefs.setString('account_id', accountId);
       
+      // Import file tree if available (version 2.0+)
+      if (data.containsKey('file_tree') && data['file_tree'] is List) {
+        final fileList = data['file_tree'] as List;
+        final fileTree = <String, DisboxFileNode>{};
+        
+        for (final item in fileList) {
+          if (item is Map<String, dynamic>) {
+            final path = item['path'] as String;
+            final node = DisboxFileNode(
+              name: item['name'] as String,
+              isFolder: item['isFolder'] as bool,
+              size: item['size'] as int?,
+              messageId: item['messageId'] as String?,
+              createdAt: item['createdAt'] != null 
+                ? DateTime.tryParse(item['createdAt'] as String) 
+                : null,
+              metadata: item['metadata'] as Map<String, dynamic>?,
+            );
+            fileTree[path] = node;
+          }
+        }
+        
+        // Save the imported file tree to local storage
+        await _disboxService.saveFileTree(fileTree);
+      }
+      
       // Reinitialize the service with the new configuration
       await _disboxService.setWebhookUrl(webhookUrl);
       
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Configuration imported successfully')),
+        const SnackBar(content: Text('Configuration and files imported successfully')),
       );
       
       // Reload files
