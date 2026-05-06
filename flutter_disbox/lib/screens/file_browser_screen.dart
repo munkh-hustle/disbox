@@ -28,6 +28,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   bool _isLoading = false;
   String? _error;
   bool _isInitialized = false;
+  bool _isPickingFile = false; // Prevent multiple file picker invocations
 
   @override
   void initState() {
@@ -134,60 +135,113 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   /// Upload a file
   Future<void> _uploadFile() async {
-    // Pick file from device
-    final result = await FilePicker.pickFiles(
-      type: FileType.any,
-      allowMultiple: false,
-    );
-
-    if (result == null || result.files.isEmpty) return;
-
-    final filePath = result.files.first.path;
-    if (filePath == null) return;
-
-    final file = File(filePath);
-    
-    // Create a controller for progress updates
-    double currentProgress = 0.0;
-    
-    // Show progress dialog with stream
-    final progressDialog = ProgressDialog(
-      title: 'Uploading ${result.files.first.name}',
-      message: 'Please wait...',
-      initialProgress: 0.0,
-      progressStream: _disboxService.uploadProgress,
-    );
-    
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => progressDialog,
-    );
+    // Prevent multiple simultaneous file picker invocations
+    if (_isPickingFile) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('File picker is already open')),
+      );
+      return;
+    }
 
     try {
-      await _disboxService.uploadFile(
-        file,
-        folderPath: _currentPath,
-        onProgress: (current, total) {
-          setState(() {
-            currentProgress = current / total;
-          });
-        },
+      setState(() => _isPickingFile = true);
+      
+      // Pick file from device
+      final result = await FilePicker.pickFiles(
+        type: FileType.any,
+        allowMultiple: false,
       );
 
-      if (mounted) Navigator.pop(context); // Close progress dialog
+      if (result == null || result.files.isEmpty) return;
+
+      final filePath = result.files.first.path;
+      if (filePath == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to access file path')),
+        );
+        return;
+      }
+
+      final file = File(filePath);
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('File uploaded successfully')),
+      // Check file size and warn for very large files
+      final fileSize = await file.length();
+      final fileSizeMB = fileSize / (1024 * 1024);
+      
+      if (fileSizeMB > 500) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Large File Warning'),
+            content: Text(
+              'The file you selected is ${fileSizeMB.toStringAsFixed(1)} MB. '
+              'Uploading large files may take a long time and could fail due to network issues or rate limits.\n\n'
+              'Do you want to continue?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Continue'),
+              ),
+            ],
+          ),
+        );
+        
+        if (confirmed != true) return;
+      }
+      
+      // Create a controller for progress updates
+      double currentProgress = 0.0;
+      
+      // Show progress dialog with stream
+      final progressDialog = ProgressDialog(
+        title: 'Uploading ${result.files.first.name}',
+        message: '${fileSizeMB.toStringAsFixed(1)} MB - Please wait...',
+        initialProgress: 0.0,
+        progressStream: _disboxService.uploadProgress,
       );
       
-      _loadFiles(); // Refresh file list
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => progressDialog,
+      );
+
+      try {
+        await _disboxService.uploadFile(
+          file,
+          folderPath: _currentPath,
+          onProgress: (current, total) {
+            setState(() {
+              currentProgress = current / total;
+            });
+          },
+        );
+
+        if (mounted) Navigator.pop(context); // Close progress dialog
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('File uploaded successfully')),
+        );
+        
+        _loadFiles(); // Refresh file list
+      } catch (e) {
+        if (mounted) Navigator.pop(context); // Close progress dialog
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Upload failed: $e')),
+        );
+      }
     } catch (e) {
-      if (mounted) Navigator.pop(context); // Close progress dialog
-      
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Upload failed: $e')),
+        SnackBar(content: Text('Error picking file: $e')),
       );
+    } finally {
+      if (mounted) setState(() => _isPickingFile = false);
     }
   }
 
