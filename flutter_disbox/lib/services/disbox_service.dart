@@ -182,13 +182,11 @@ class DisboxService {
       }
       return result;
     } else if (data is List) {
-      // Lists should not be passed here, but handle gracefully
-      print('[DisboxService WARNING] Unexpected List in _convertMapToStringKeys, returning null');
-      return null;
+      // Convert list elements recursively
+      return data.map((item) => _convertMapToStringKeys(item)).toList();
     } else {
-      // Primitive types should not be passed here - this indicates a logic error
-      print('[DisboxService ERROR] Unexpected type ${data.runtimeType} in _convertMapToStringKeys, expected Map');
-      return null;
+      // Primitive types (String, int, bool, double, etc.) - return as-is
+      return data;
     }
   }
 
@@ -245,7 +243,11 @@ class DisboxService {
           'updated_at': DateTime.now().toIso8601String(),
         };
       } else {
-        final childrenCount = (_fileTree!['children'] as Map?)?.length ?? 0;
+        final childrenMap = _fileTree!['children'];
+        int childrenCount = 0;
+        if (childrenMap is Map) {
+          childrenCount = childrenMap.length;
+        }
         print('[DisboxService] Loaded file tree with $childrenCount items');
       }
     } else {
@@ -565,7 +567,7 @@ class DisboxService {
     if (childrenData is Map) {
       children = <String, dynamic>{};
       for (final entry in childrenData.entries) {
-        children[entry.key.toString()] = entry.value;
+        children[entry.key.toString()] = _convertMapToStringKeys(entry.value) ?? entry.value;
       }
     }
     
@@ -580,7 +582,7 @@ class DisboxService {
         if (node is Map) {
           childNode = <String, dynamic>{};
           for (final entry in node.entries) {
-            childNode[entry.key.toString()] = entry.value;
+            childNode[entry.key.toString()] = _convertMapToStringKeys(entry.value) ?? entry.value;
           }
         }
         
@@ -603,20 +605,46 @@ class DisboxService {
           }
         }
 
+        // Get size - handle both int and num types
+        int? fileSize;
+        final sizeValue = childNode['size'];
+        if (sizeValue is int) {
+          fileSize = sizeValue;
+        } else if (sizeValue is num) {
+          fileSize = sizeValue.toInt();
+        } else if (sizeValue is String) {
+          fileSize = int.tryParse(sizeValue);
+        }
+
+        // Parse dates safely
+        DateTime? createdAt;
+        if (childNode['created_at'] != null) {
+          try {
+            createdAt = DateTime.parse(childNode['created_at'].toString());
+          } catch (_) {
+            createdAt = DateTime.now();
+          }
+        }
+        
+        DateTime? modifiedAt;
+        if (childNode['updated_at'] != null) {
+          try {
+            modifiedAt = DateTime.parse(childNode['updated_at'].toString());
+          } catch (_) {
+            modifiedAt = DateTime.now();
+          }
+        }
+
         final file = DisboxFile(
           id: childNode['id'].toString(),
           name: name,
           path: childPath,
           isFolder: isFolder,
-          size: childNode['size'] as int?,
+          size: fileSize,
           mimeType: !isFolder ? _detectMimeType(name) : null,
           chunkMessageIds: chunkMessageIds,
-          createdAt: childNode['created_at'] != null 
-              ? DateTime.parse(childNode['created_at'] as String) 
-              : DateTime.now(),
-          modifiedAt: childNode['updated_at'] != null 
-              ? DateTime.parse(childNode['updated_at'] as String) 
-              : DateTime.now(),
+          createdAt: createdAt ?? DateTime.now(),
+          modifiedAt: modifiedAt ?? DateTime.now(),
         );
         
         files.add(file);
