@@ -283,6 +283,14 @@ class DisboxService {
     }
   }
 
+  /// Reload the file tree from local storage into memory.
+  /// 
+  /// This is needed after importing a file tree to ensure the in-memory cache
+  /// matches what was just saved to disk.
+  Future<void> reloadFileTree() async {
+    await _loadFileTree();
+  }
+
   /// Public method to get the file tree as a List of DisboxFile
   /// Used for exporting metadata to other devices
   Future<List<DisboxFile>> getFileTreeList() async {

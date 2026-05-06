@@ -4,27 +4,40 @@
 .build/
 packages/
 *.iws
-*.sw?
-lib/*.g.dart
-test/*.g.dart
-integration_test/*.g.dart
-
-# IDE
-.vscode/
-.idea/
+*.lock
+*.tmp
+*.log
+*.swo
+*.swp
 
 # Environment
 .env
 .env.local
 *.env.*
 
+# Dependencies
+node_modules/
+vendor/
+
 # Logs
 *.log
-**/logs
 
-# OS
+# OS generated files
 .DS_Store
 Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# Build outputs
+build/
+dist/
+target/
 
 # Temporary files
 *.tmp

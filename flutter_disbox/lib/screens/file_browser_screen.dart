@@ -786,6 +786,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         // Save the imported file tree to local storage
         // Now it will be saved under the correct account ID
         await _disboxService.saveFileTreeFromList(fileList);
+        
+        // CRITICAL: Reload the file tree into memory after saving
+        // The in-memory _fileTree still has the old data from before import
+        await _disboxService.reloadFileTree();
       }
       
       ScaffoldMessenger.of(context).showSnackBar(
