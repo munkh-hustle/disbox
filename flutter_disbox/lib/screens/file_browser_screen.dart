@@ -360,6 +360,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       
       // Save to public Documents folder
       String? savedPath;
+      String savedFileName = file.name; // Track the final saved filename
       try {
         // Try to access the public Documents directory
         Directory? documentsDir;
@@ -400,6 +401,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           counter++;
         }
         
+        // Update savedFileName for the success message
+        savedFileName = finalFileName;
+        
         // Write the file
         final savedFile = File(finalFilePath);
         await savedFile.writeAsBytes(fileData);
@@ -429,7 +433,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('$finalFileName saved to Documents/Disbox'),
+            content: Text('$savedFileName saved to Documents/Disbox'),
             action: SnackBarAction(
               label: 'OK',
               onPressed: () {},
