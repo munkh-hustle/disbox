@@ -1,31 +1,32 @@
 ```
-# Build artifacts
-/build/
-/bin/
-/obj/
+# Flutter/Dart
+.dart_tool/
+.build/
+packages/
+*.iws
+*.sw?
+lib/*.g.dart
+test/*.g.dart
+integration_test/*.g.dart
 
-# Dependencies
-.pub-cache/
-.packages
-
-# Logs
-*.log
+# IDE
+.vscode/
+.idea/
 
 # Environment
 .env
 .env.local
 *.env.*
 
-# IDE files
-.vscode/
-.idea/
-*.iml
-*.ipr
-*.iws
-*.swp
-*.swo
+# Logs
+*.log
+**/logs
 
-# OS generated files
+# OS
 .DS_Store
 Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
 ```
