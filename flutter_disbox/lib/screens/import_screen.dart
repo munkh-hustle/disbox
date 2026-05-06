@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/disbox_service.dart';
 import 'file_browser_screen.dart';
+import 'manual_setup_screen.dart';
 
 /// Screen for importing webhook configuration from a JSON file.
 /// 
@@ -199,7 +200,7 @@ class _ImportScreenState extends State<ImportScreen> {
                   // Navigate to manual setup
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const SetupScreen()),
+                    MaterialPageRoute(builder: (_) => const ManualSetupScreen()),
                   );
                 },
                 icon: const Icon(Icons.edit),
