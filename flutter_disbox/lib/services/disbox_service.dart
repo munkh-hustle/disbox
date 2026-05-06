@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path/path.dart' as path;
 
 import '../models/disbox_file.dart';
@@ -17,10 +18,19 @@ typedef ProgressCallback = void Function(int current, int total);
 /// This class handles all communication with Discord's API to store and retrieve
 /// files using webhooks. All operations are performed client-side - the webhook
 /// URL is never sent to any third-party server.
+/// 
+/// File tree metadata is stored locally using Hive for persistence across app restarts.
 class DisboxService {
   final Dio _dio;
   String? _webhookUrl;
   String? _accountId; // Hash of webhook URL for local identification
+  
+  // File tree cache stored locally
+  Map<String, dynamic>? _fileTree;
+  
+  // Hive box for storing file tree metadata
+  static const String _fileTreeBoxName = 'file_tree';
+  Box? _fileTreeBox;
   
   // Cache for file metadata (in production, use Hive or SharedPreferences)
   final Map<String, DisboxFile> _fileCache = {};
@@ -43,18 +53,33 @@ class DisboxService {
     ));
   }
 
+  /// Initialize Hive for local storage
+  Future<void> _initHive() async {
+    await Hive.initFlutter();
+    _fileTreeBox = await Hive.openBox(_fileTreeBoxName);
+  }
+
   /// Set the webhook URL and generate account ID from it.
   /// 
   /// The webhook URL is stored locally only and never sent to third parties.
   /// The account ID is a SHA256 hash of the webhook URL for local identification.
+  /// Also loads existing file tree from local storage.
   Future<void> setWebhookUrl(String webhookUrl) async {
     // Validate webhook URL format
     if (!_isValidWebhookUrl(webhookUrl)) {
       throw FormatException('Invalid Discord webhook URL format');
     }
     
+    // Initialize Hive if not already done
+    if (_fileTreeBox == null) {
+      await _initHive();
+    }
+    
     _webhookUrl = webhookUrl;
     _accountId = _hashWebhookUrl(webhookUrl);
+    
+    // Load existing file tree from local storage
+    await _loadFileTree();
     
     // Save webhook URL securely (in production, use flutter_secure_storage)
     // await secureStorage.write(key: 'webhook_url', value: webhookUrl);
@@ -114,6 +139,59 @@ class DisboxService {
     }
     
     return '${DisboxConstants.discordApiBase}/${creds.id}/${creds.token}';
+  }
+
+  // ==================== LOCAL STORAGE METHODS ====================
+
+  /// Load file tree from local Hive storage.
+  /// 
+  /// This loads the existing file metadata that was previously stored
+  /// locally. The file tree is stored in Hive indexed by the account ID.
+  Future<void> _loadFileTree() async {
+    if (_webhookUrl == null || _fileTreeBox == null) {
+      return;
+    }
+
+    print('Loading file tree from local storage...');
+    
+    // Try to load file tree from Hive using account ID as key
+    final storedData = _fileTreeBox!.get(_accountId);
+    
+    if (storedData != null) {
+      // Decode from JSON string
+      _fileTree = jsonDecode(storedData as String) as Map<String, dynamic>;
+      final childrenCount = (_fileTree!['children'] as Map?)?.length ?? 0;
+      print('Loaded file tree with $childrenCount items');
+    } else {
+      // Initialize empty file tree if none found
+      _fileTree = {
+        'id': 'root',
+        'name': 'root',
+        'type': 'directory',
+        'children': {},
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      print('Initialized new empty file tree');
+    }
+  }
+
+  /// Save file tree to local Hive storage.
+  /// 
+  /// Called after creating, updating, or deleting files to persist changes.
+  Future<void> _saveFileTree() async {
+    if (_webhookUrl == null || _fileTreeBox == null || _fileTree == null) {
+      return;
+    }
+
+    try {
+      // Encode to JSON string and save to Hive
+      final jsonData = jsonEncode(_fileTree);
+      await _fileTreeBox!.put(_accountId, jsonData);
+      print('File tree saved to local storage');
+    } catch (e) {
+      print('Failed to save file tree: $e');
+    }
   }
 
   // ==================== FILE OPERATIONS ====================
@@ -210,6 +288,16 @@ class DisboxService {
       parentId: _getParentFolderId(folderPath),
     );
 
+    // Add file to file tree
+    await _addFileToFileTree(
+      id: metadataMessageId,
+      name: filename,
+      path: filePath,
+      size: fileSize,
+      mimeType: mimeType,
+      chunkMessageIds: chunkMessageIds,
+    );
+
     _fileCache[disboxFile.id] = disboxFile;
     
     return disboxFile;
@@ -288,13 +376,16 @@ class DisboxService {
       print('Warning: Failed to delete metadata message ${file.id}: $e');
     }
 
+    // Remove from file tree
+    await _removeFileFromFileTree(file.path, isFolder: file.isFolder);
+
     // Remove from cache
     _fileCache.remove(file.id);
   }
 
   /// List files in a folder.
   /// 
-  /// Fetches metadata messages and returns DisboxFile objects.
+  /// Fetches metadata from the loaded file tree (from backend server).
   /// 
   /// [folderPath] - The virtual folder path to list (default: root "/")
   Future<List<DisboxFile>> listFiles({String folderPath = '/'}) async {
@@ -304,29 +395,66 @@ class DisboxService {
 
     print('Listing files in: $folderPath');
 
-    // Fetch all messages from the webhook
-    final messages = await _fetchMessages();
-    
-    // Filter for metadata messages in this folder
+    // Use file tree from backend server instead of fetching Discord messages
+    if (_fileTree == null) {
+      print('File tree not loaded yet');
+      return [];
+    }
+
     final files = <DisboxFile>[];
     
-    for (final message in messages) {
-      // Skip non-metadata messages
-      if (!_isMetadataMessage(message)) continue;
-      
-      try {
-        final metadata = _parseMetadataMessage(message);
-        
-        // Filter by folder path
-        final parentPath = _getParentPath(metadata.path);
-        if (parentPath == folderPath || 
-            (folderPath == '/' && parentPath.isEmpty)) {
-          files.add(metadata);
-        }
-      } catch (e) {
-        print('Warning: Failed to parse metadata message: $e');
-      }
+    // Navigate to the correct folder in the file tree
+    final targetFolder = _getFolderFromTree(folderPath);
+    if (targetFolder == null) {
+      print('Folder not found: $folderPath');
+      return [];
     }
+
+    // Extract children from the file tree
+    final children = targetFolder['children'] as Map<String, dynamic>?;
+    if (children == null) {
+      return [];
+    }
+
+    // Convert file tree nodes to DisboxFile objects
+    children.forEach((name, node) {
+      try {
+        final childNode = node as Map<String, dynamic>;
+        final childPath = '$folderPath/$name';
+        final isFolder = childNode['type'] == 'directory';
+        
+        // Parse chunk message IDs from content (for files)
+        List<String> chunkMessageIds = [];
+        if (!isFolder && childNode['content'] != null) {
+          try {
+            final contentList = jsonDecode(childNode['content'] as String) as List;
+            chunkMessageIds = contentList.map((id) => id.toString()).toList();
+          } catch (e) {
+            print('Warning: Failed to parse content for $name: $e');
+          }
+        }
+
+        final file = DisboxFile(
+          id: childNode['id'].toString(),
+          name: name,
+          path: childPath,
+          isFolder: isFolder,
+          size: childNode['size'] as int?,
+          mimeType: !isFolder ? _detectMimeType(name) : null,
+          chunkMessageIds: chunkMessageIds,
+          createdAt: childNode['created_at'] != null 
+              ? DateTime.parse(childNode['created_at'] as String) 
+              : DateTime.now(),
+          modifiedAt: childNode['updated_at'] != null 
+              ? DateTime.parse(childNode['updated_at'] as String) 
+              : DateTime.now(),
+        );
+        
+        files.add(file);
+      } catch (e) {
+        print('Warning: Failed to convert node $name: $e');
+      }
+    });
 
     // Sort: folders first, then files, alphabetically
     files.sort((a, b) {
@@ -338,7 +466,36 @@ class DisboxService {
     return files;
   }
 
-  /// Create a folder (virtual - stored as metadata message).
+  /// Get a folder node from the file tree by path.
+  /// 
+  /// Returns null if the folder doesn't exist.
+  Map<String, dynamic>? _getFolderFromTree(String path) {
+    if (_fileTree == null) return null;
+    
+    if (path == '/') {
+      return _fileTree;
+    }
+
+    var currentNode = _fileTree;
+    final parts = path.split('/').where((p) => p.isNotEmpty).toList();
+    
+    for (final part in parts) {
+      final children = currentNode?['children'] as Map<String, dynamic>?;
+      if (children == null || !children.containsKey(part)) {
+        return null;
+      }
+      currentNode = children[part] as Map<String, dynamic>?;
+      
+      // Verify it's a directory
+      if (currentNode?['type'] != 'directory') {
+        return null;
+      }
+    }
+    
+    return currentNode;
+  }
+
+  /// Create a folder (virtual - stored via backend server).
   Future<DisboxFile> createFolder(String name, {String parentPath = '/'}) async {
     if (!isConfigured) {
       throw StateError('Webhook URL not configured');
@@ -348,29 +505,51 @@ class DisboxService {
     
     print('Creating folder: $name at $folderPath');
 
-    // Create metadata message for folder
-    final metadataMessageId = await _createMetadataMessage(
-      filename: name,
-      path: folderPath,
-      size: 0,
-      mimeType: null,
-      chunkMessageIds: [],
-      isFolder: true,
-    );
+    // Get parent folder from file tree
+    final parentFolder = _getFolderFromTree(parentPath);
+    if (parentFolder == null) {
+      throw Exception('Parent folder not found: $parentPath');
+    }
+
+    // Check if folder already exists
+    final children = parentFolder['children'] as Map<String, dynamic>?;
+    if (children != null && children.containsKey(name)) {
+      throw Exception('Folder already exists: $name');
+    }
+
+    // Generate new ID for the folder
+    final newId = DateTime.now().millisecondsSinceEpoch.toString();
+    
+    // Create folder node
+    final folderNode = {
+      'id': newId,
+      'name': name,
+      'type': 'directory',
+      'children': <String, dynamic>{},
+      'created_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+
+    // Add to parent's children
+    if (children == null) {
+      parentFolder['children'] = {name: folderNode};
+    } else {
+      children[name] = folderNode;
+    }
+
+    // Save file tree to local storage
+    await _saveFileTree();
 
     final folder = DisboxFile(
-      id: metadataMessageId,
+      id: newId,
       name: name,
       path: folderPath,
       isFolder: true,
       size: 0,
       createdAt: DateTime.now(),
       modifiedAt: DateTime.now(),
-      parentId: _getParentFolderId(parentPath),
     );
 
-    _fileCache[folder.id] = folder;
-    
     return folder;
   }
 
@@ -593,6 +772,96 @@ class DisboxService {
     );
   }
 
+
+  /// Add a file entry to the file tree and save to local storage.
+  Future<void> _addFileToFileTree({
+    required String id,
+    required String name,
+    required String path,
+    required int size,
+    required String mimeType,
+    required List<String> chunkMessageIds,
+  }) async {
+    if (_fileTree == null) {
+      print('File tree not initialized');
+      return;
+    }
+
+    // Get parent folder from path
+    final parts = path.split('/').where((p) => p.isNotEmpty).toList();
+    Map<String, dynamic>? currentFolder = _fileTree;
+    
+    for (int i = 0; i < parts.length - 1; i++) {
+      final folderName = parts[i];
+      final children = currentFolder!['children'] as Map<String, dynamic>?;
+      if (children != null && children.containsKey(folderName)) {
+        currentFolder = children[folderName] as Map<String, dynamic>;
+      } else {
+        print('Parent folder not found: $folderName');
+        return;
+      }
+    }
+
+    // Create file node
+    final fileName = parts.last;
+    final fileNode = {
+      'id': id,
+      'name': fileName,
+      'type': 'file',
+      'size': size,
+      'mime_type': mimeType,
+      'content': jsonEncode(chunkMessageIds),
+      'created_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+
+    // Add to parent's children
+    final children = currentFolder!['children'] as Map<String, dynamic>? ?? {};
+    children[fileName] = fileNode;
+    currentFolder['children'] = children;
+
+    // Save file tree to local storage
+    await _saveFileTree();
+  }
+
+  /// Remove a file or folder from the file tree and save to local storage.
+  Future<void> _removeFileFromFileTree(String path, {required bool isFolder}) async {
+    if (_fileTree == null) {
+      print('File tree not initialized');
+      return;
+    }
+
+    // Get parent folder from path
+    final parts = path.split('/').where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) {
+      print('Invalid path: $path');
+      return;
+    }
+
+    Map<String, dynamic>? currentFolder = _fileTree;
+    
+    // Navigate to parent folder
+    for (int i = 0; i < parts.length - 1; i++) {
+      final folderName = parts[i];
+      final children = currentFolder!['children'] as Map<String, dynamic>?;
+      if (children != null && children.containsKey(folderName)) {
+        currentFolder = children[folderName] as Map<String, dynamic>;
+      } else {
+        print('Parent folder not found: $folderName');
+        return;
+      }
+    }
+
+    // Remove from parent's children
+    final fileName = parts.last;
+    final children = currentFolder!['children'] as Map<String, dynamic>?;
+    if (children != null && children.containsKey(fileName)) {
+      children.remove(fileName);
+      
+      // Save file tree to local storage
+      await _saveFileTree();
+    }
+  }
   // ==================== UTILITY METHODS ====================
 
   /// Normalize a path (ensure starts with /, no trailing /, no double slashes)

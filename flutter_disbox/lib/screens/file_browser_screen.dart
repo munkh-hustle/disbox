@@ -41,43 +41,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     });
 
     try {
-      // For MVP, we'll use mock data since message fetching isn't fully implemented
-      // In production, uncomment: final files = await _disboxService.listFiles(folderPath: _currentPath);
-      await Future.delayed(const Duration(milliseconds: 500)); // Simulate network delay
-      
-      // Mock data for demonstration
-      final mockFiles = [
-        DisboxFile(
-          id: '1',
-          name: 'Documents',
-          path: '/Documents',
-          isFolder: true,
-          createdAt: DateTime.now(),
-          modifiedAt: DateTime.now(),
-        ),
-        DisboxFile(
-          id: '2',
-          name: 'Photos',
-          path: '/Photos',
-          isFolder: true,
-          createdAt: DateTime.now(),
-          modifiedAt: DateTime.now(),
-        ),
-        DisboxFile(
-          id: '3',
-          name: 'example.pdf',
-          path: '/example.pdf',
-          isFolder: false,
-          size: 1024 * 512, // 512 KB
-          mimeType: 'application/pdf',
-          chunkMessageIds: ['msg1'],
-          createdAt: DateTime.now(),
-          modifiedAt: DateTime.now(),
-        ),
-      ];
+      // Fetch files from backend server via DisboxService
+      final files = await _disboxService.listFiles(folderPath: _currentPath);
       
       setState(() {
-        _files = mockFiles;
+        _files = files;
         _isLoading = false;
       });
     } catch (e) {

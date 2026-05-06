@@ -1,42 +1,21 @@
 ```
-# Flutter/Dart
+# Dependencies
 .dart_tool/
-.packages
-.pub/
-build/
-ios/.symlinks/
-lib/generated/
-
+.build/
+# Logs and temp files
+*.log
+*.tmp
+*.swp
 # Environment
 .env
 .env.local
 *.env.*
-
-# Logs
-*.log
-**/logs
-
-# Dependencies
-node_modules/
-**/node_modules/
-
-# IDE
+# Editors
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
 # Coverage
 coverage/
-htmlcov/
-.coverage
-
 # Build outputs
-dist/
-target/
-.gradle/
+bin/
+build/
 ```
