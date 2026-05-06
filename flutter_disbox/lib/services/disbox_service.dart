@@ -40,14 +40,30 @@ class DisboxService {
     _dio.options.receiveTimeout = const Duration(minutes: 5);
     _dio.options.sendTimeout = const Duration(minutes: 5);
     
-    // Add interceptor for logging and error handling
+    // Add interceptor for detailed logging and error handling
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
         print('[DIO] ${options.method} ${options.path}');
+        print('[DIO] Headers: ${options.headers}');
+        if (options.queryParameters.isNotEmpty) {
+          print('[DIO] QueryParams: ${options.queryParameters}');
+        }
         return handler.next(options);
       },
+      onResponse: (response, handler) {
+        print('[DIO RESPONSE] ${response.statusCode} - ${response.requestOptions.path}');
+        print('[DIO RESPONSE] Data keys: ${(response.data as Map?)?.keys.toList()}');
+        return handler.next(response);
+      },
       onError: (error, handler) {
-        print('[DIO ERROR] ${error.message}');
+        print('[DIO ERROR] Type: ${error.type}, Message: ${error.message}');
+        print('[DIO ERROR] StatusCode: ${error.response?.statusCode}');
+        print('[DIO ERROR] Response Data: ${error.response?.data}');
+        print('[DIO ERROR] Request: ${error.requestOptions.method} ${error.requestOptions.path}');
+        if (error.error != null) {
+          print('[DIO ERROR] Inner Error: ${error.error}');
+          print('[DIO ERROR] Stack Trace: ${error.stackTrace}');
+        }
         return handler.next(error);
       },
     ));
@@ -289,72 +305,107 @@ class DisboxService {
       var uploadedBytes = 0;
       
       for (int i = 0; i < chunks.length; i++) {
-        final chunkData = await ChunkUtils.readChunk(file, i);
-        
-        print('Uploading chunk ${i + 1}/${chunks.length}');
-        
-        final messageId = await _uploadAttachment(
-          chunkData,
-          filename: '${filename}.part$i',
-          contentType: 'application/octet-stream',
-        );
-        
-        chunkMessageIds.add(messageId);
-        uploadedBytes += chunkData.length;
-        
-        onProgress?.call(uploadedBytes, fileSize);
+        try {
+          final chunkData = await ChunkUtils.readChunk(file, i);
+          
+          print('Uploading chunk ${i + 1}/${chunks.length} (${chunkData.length} bytes)');
+          
+          final messageId = await _uploadAttachment(
+            chunkData,
+            filename: '${filename}.part$i',
+            contentType: 'application/octet-stream',
+          );
+          
+          chunkMessageIds.add(messageId);
+          uploadedBytes += chunkData.length;
+          
+          print('Chunk ${i + 1}/${chunks.length} uploaded successfully. Message ID: $messageId');
+          onProgress?.call(uploadedBytes, fileSize);
+        } catch (e, stackTrace) {
+          print('[UPLOAD ERROR] Failed to upload chunk ${i + 1}/${chunks.length}: $e');
+          print('[UPLOAD ERROR] Stack Trace: $stackTrace');
+          rethrow;
+        }
       }
     } else {
       // Upload as single file
-      final fileBytes = await file.readAsBytes();
-      
-      final messageId = await _uploadAttachment(
-        fileBytes,
-        filename: filename,
-        contentType: mimeType,
-      );
-      
-      chunkMessageIds.add(messageId);
-      onProgress?.call(fileSize, fileSize);
+      try {
+        final fileBytes = await file.readAsBytes();
+        
+        print('Uploading single file ($fileSize bytes)');
+        
+        final messageId = await _uploadAttachment(
+          fileBytes,
+          filename: filename,
+          contentType: mimeType,
+        );
+        
+        chunkMessageIds.add(messageId);
+        print('Single file uploaded successfully. Message ID: $messageId');
+        onProgress?.call(fileSize, fileSize);
+      } catch (e, stackTrace) {
+        print('[UPLOAD ERROR] Failed to upload single file: $e');
+        print('[UPLOAD ERROR] Stack Trace: $stackTrace');
+        rethrow;
+      }
     }
 
     // Create metadata message to store file information
-    final metadataMessageId = await _createMetadataMessage(
-      filename: filename,
-      path: filePath,
-      size: fileSize,
-      mimeType: mimeType,
-      chunkMessageIds: chunkMessageIds,
-      isFolder: false,
-    );
+    try {
+      print('Creating metadata message for $filename...');
+      final metadataMessageId = await _createMetadataMessage(
+        filename: filename,
+        path: filePath,
+        size: fileSize,
+        mimeType: mimeType,
+        chunkMessageIds: chunkMessageIds,
+        isFolder: false,
+      );
+      print('Metadata message created successfully. Message ID: $metadataMessageId');
 
-    // Create and cache DisboxFile object
-    final disboxFile = DisboxFile(
-      id: metadataMessageId,
-      name: filename,
-      path: filePath,
-      isFolder: false,
-      size: fileSize,
-      mimeType: mimeType,
-      chunkMessageIds: chunkMessageIds,
-      createdAt: DateTime.now(),
-      modifiedAt: DateTime.now(),
-      parentId: _getParentFolderId(folderPath),
-    );
+      // Create and cache DisboxFile object
+      final disboxFile = DisboxFile(
+        id: metadataMessageId,
+        name: filename,
+        path: filePath,
+        isFolder: false,
+        size: fileSize,
+        mimeType: mimeType,
+        chunkMessageIds: chunkMessageIds,
+        createdAt: DateTime.now(),
+        modifiedAt: DateTime.now(),
+        parentId: _getParentFolderId(folderPath),
+      );
 
-    // Add file to file tree
-    await _addFileToFileTree(
-      id: metadataMessageId,
-      name: filename,
-      path: filePath,
-      size: fileSize,
-      mimeType: mimeType,
-      chunkMessageIds: chunkMessageIds,
-    );
+      // Add file to file tree
+      await _addFileToFileTree(
+        id: metadataMessageId,
+        name: filename,
+        path: filePath,
+        size: fileSize,
+        mimeType: mimeType,
+        chunkMessageIds: chunkMessageIds,
+      );
 
-    _fileCache[disboxFile.id] = disboxFile;
-    
-    return disboxFile;
+      _fileCache[disboxFile.id] = disboxFile;
+      
+      print('Upload complete: ${file.name} -> $filePath');
+      return disboxFile;
+    } catch (e, stackTrace) {
+      print('[METADATA ERROR] Failed to create metadata message: $e');
+      print('[METADATA ERROR] Stack Trace: $stackTrace');
+      print('[UPLOAD ABORTED] Cleaning up uploaded chunks due to metadata failure...');
+      // Cleanup: delete any successfully uploaded chunks
+      for (final messageId in chunkMessageIds) {
+        try {
+          await _deleteMessage(messageId);
+          print('[CLEANUP] Deleted chunk message: $messageId');
+        } catch (cleanupError) {
+          print('[CLEANUP ERROR] Failed to delete chunk $messageId: $cleanupError');
+        }
+      }
+      rethrow;
+    }
   }
 
   /// Download a file from Discord.
@@ -698,7 +749,7 @@ class DisboxService {
   // ==================== DISCORD API METHODS ====================
 
   /// Upload an attachment to Discord via webhook.
-  /// 
+  ///
   /// Returns the message ID of the created message.
   Future<String> _uploadAttachment(
     Uint8List data, {
@@ -706,7 +757,10 @@ class DisboxService {
     required String contentType,
   }) async {
     final apiUrl = _getWebhookApiUrl();
-    
+
+    print('[UPLOAD ATTACHMENT] Starting upload: $filename (${data.length} bytes)');
+    print('[UPLOAD ATTACHMENT] API URL: $apiUrl');
+
     // Create multipart form data
     final formData = FormData.fromMap({
       'file': MultipartFile.fromBytes(
@@ -714,22 +768,34 @@ class DisboxService {
         filename: filename,
         contentType: DioMediaType.parse(contentType),
       ),
-      // Wait=false means don't wait for message processing
+      // Wait=true means wait for message processing
       'wait': 'true',
     });
 
-    final response = await _dio.post(
-      apiUrl,
-      data: formData,
-      queryParameters: {'wait': 'true'},
-    );
+    try {
+      final response = await _dio.post(
+        apiUrl,
+        data: formData,
+        queryParameters: {'wait': 'true'},
+      );
 
-    if (response.statusCode != 200) {
-      throw Exception('Failed to upload attachment: ${response.statusCode}');
+      print('[UPLOAD ATTACHMENT] Response status: ${response.statusCode}');
+
+      if (response.statusCode != 200) {
+        print('[UPLOAD ATTACHMENT ERROR] Failed with status ${response.statusCode}');
+        print('[UPLOAD ATTACHMENT ERROR] Response: ${response.data}');
+        throw Exception('Failed to upload attachment: ${response.statusCode} - ${response.data}');
+      }
+
+      final responseData = response.data as Map<String, dynamic>;
+      final messageId = responseData['id'] as String;
+      print('[UPLOAD ATTACHMENT] Success! Message ID: $messageId');
+      return messageId;
+    } catch (e, stackTrace) {
+      print('[UPLOAD ATTACHMENT ERROR] Upload failed: $e');
+      print('[UPLOAD ATTACHMENT ERROR] Stack Trace: $stackTrace');
+      rethrow;
     }
-
-    final responseData = response.data as Map<String, dynamic>;
-    return responseData['id'] as String;
   }
 
   /// Download an attachment from a Discord message.
@@ -789,6 +855,9 @@ class DisboxService {
   /// Create a metadata message to store file information.
   /// 
   /// Encodes file metadata as JSON in the message content.
+  /// Create a metadata message to store file information.
+  ///
+  /// Encodes file metadata as JSON in the message content.
   Future<String> _createMetadataMessage({
     required String filename,
     required String path,
@@ -798,7 +867,7 @@ class DisboxService {
     required bool isFolder,
   }) async {
     final apiUrl = _getWebhookApiUrl();
-    
+
     final metadata = {
       'type': 'disbox_metadata',
       'version': '1.0',
@@ -811,16 +880,35 @@ class DisboxService {
       'createdAt': DateTime.now().toIso8601String(),
     };
 
-    final response = await _dio.post(
-      apiUrl,
-      data: {
-        'content': '${DisboxConstants.boxPrefix} ${jsonEncode(metadata)}',
-      },
-      queryParameters: {'wait': 'true'},
-    );
+    print('[METADATA] Creating metadata message for $filename');
+    print('[METADATA] Metadata: ${jsonEncode(metadata)}');
 
-    final responseData = response.data as Map<String, dynamic>;
-    return responseData['id'] as String;
+    try {
+      final response = await _dio.post(
+        apiUrl,
+        data: {
+          'content': '${DisboxConstants.boxPrefix} ${jsonEncode(metadata)}',
+        },
+        queryParameters: {'wait': 'true'},
+      );
+
+      print('[METADATA] Response status: ${response.statusCode}');
+
+      if (response.statusCode != 200) {
+        print('[METADATA ERROR] Failed with status ${response.statusCode}');
+        print('[METADATA ERROR] Response: ${response.data}');
+        throw Exception('Failed to create metadata message: ${response.statusCode} - ${response.data}');
+      }
+
+      final responseData = response.data as Map<String, dynamic>;
+      final messageId = responseData['id'] as String;
+      print('[METADATA] Success! Message ID: $messageId');
+      return messageId;
+    } catch (e, stackTrace) {
+      print('[METADATA ERROR] Failed to create metadata: $e');
+      print('[METADATA ERROR] Stack Trace: $stackTrace');
+      rethrow;
+    }
   }
 
   /// Update a metadata message.
