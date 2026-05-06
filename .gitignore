@@ -1,39 +1,31 @@
 ```
-# Build artifacts
-/build/
-*.apk
-*.aab
-*.app
-*.exe
-*.dll
-*.so
-*.dylib
-
-# Flutter/Dart specific
+# Flutter/Dart
 .dart_tool/
 .packages
 .pub-cache/
-.pub/
-flutter/ephemeral/
+pubspec.lock
+build/
 
-# IDE files
-.idea/
-.vscode/
-*.iml
-*.ipr
-*.iws
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+*.apk
+*.aar
 
-# Temp files
-*.tmp
-*.log
-*.swp
+# iOS
+ios/Pods/
+ios/build/
+*.ipa
 
-# Environment
+# General
+.DS_Store
+Thumbs.db
 .env
 .env.local
 *.env.*
-
-# OS generated files
-.DS_Store
-Thumbs.db
+*.log
+*.tmp
+.vscode/
+.idea/
 ```

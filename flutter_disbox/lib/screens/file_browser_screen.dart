@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:open_file/open_file.dart';
 import 'dart:io';
 
 import '../services/disbox_service.dart';
@@ -296,8 +297,27 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   /// Download a file
   Future<void> _downloadFile(DisboxFile file) async {
-    // Get downloads directory
-    final directory = await getExternalStorageDirectory();
+    // Get downloads directory - use public Downloads folder
+    Directory? directory;
+    
+    // Try to get the public Downloads directory first
+    try {
+      // For Android 10+ we need to use external storage directories
+      final externalDirs = await getExternalStorageDirectories(
+        type: StorageDirectory.downloads,
+      );
+      if (externalDirs != null && externalDirs.isNotEmpty) {
+        directory = externalDirs.first;
+      }
+    } catch (e) {
+      print('Error getting downloads directory: $e');
+    }
+    
+    // Fallback to app's external storage directory
+    if (directory == null) {
+      directory = await getExternalStorageDirectory();
+    }
+    
     if (directory == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Cannot access storage')),
@@ -310,7 +330,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     // Show progress dialog with stream
     final progressDialog = ProgressDialog(
       title: 'Downloading ${file.name}',
-      message: 'Please wait...',
+      message: 'Preparing download...',
       initialProgress: 0.0,
       progressStream: _disboxService.downloadProgress,
     );
@@ -332,9 +352,66 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
       if (mounted) Navigator.pop(context); // Close progress dialog
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Saved to: $outputPath')),
-      );
+      // Show success message with option to open file
+      if (mounted) {
+        final openResult = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Download Complete'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('File downloaded successfully!'),
+                const SizedBox(height: 8),
+                Text(
+                  'Location: ${outputPath}',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  'Size: ${_formatFileSize(file.size)}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('OK'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () => Navigator.pop(context, true),
+                icon: const Icon(Icons.open_in_browser),
+                label: const Text('Open File'),
+              ),
+            ],
+          ),
+        );
+        
+        if (openResult == true) {
+          // Try to open the file
+          final result = await OpenFile.open(outputPath);
+          if (result.type != ResultType.done) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Cannot open file: ${result.message}')),
+              );
+            }
+          }
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Saved to: $outputPath'),
+              action: SnackBarAction(
+                label: 'Open',
+                onPressed: () => OpenFile.open(outputPath),
+              ),
+            ),
+          );
+        }
+      }
     } catch (e) {
       if (mounted) Navigator.pop(context); // Close progress dialog
       
@@ -342,6 +419,14 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         SnackBar(content: Text('Download failed: $e')),
       );
     }
+  }
+  
+  /// Format file size for display
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
   /// Delete a file or folder
