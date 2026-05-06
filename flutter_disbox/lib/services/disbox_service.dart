@@ -53,7 +53,14 @@ class DisboxService {
       },
       onResponse: (response, handler) {
         print('[DIO RESPONSE] ${response.statusCode} - ${response.requestOptions.path}');
-        print('[DIO RESPONSE] Data keys: ${(response.data as Map?)?.keys.toList()}');
+        // Only try to get keys if response data is a Map
+        if (response.data is Map) {
+          print('[DIO RESPONSE] Data keys: ${(response.data as Map).keys.toList()}');
+        } else if (response.data is Uint8List) {
+          print('[DIO RESPONSE] Binary data: ${(response.data as Uint8List).length} bytes');
+        } else {
+          print('[DIO RESPONSE] Data type: ${response.data.runtimeType}');
+        }
         return handler.next(response);
       },
       onError: (error, handler) {
