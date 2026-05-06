@@ -4,11 +4,11 @@ import 'dart:typed_data';
 
 /// Constants for Discord API and file chunking
 class DisboxConstants {
-  /// Discord attachment size limit (25MB for most users)
-  static const int maxAttachmentSize = 25 * 1024 * 1024; // 25 MB
+  /// Discord attachment size limit (10MB for most users)
+  static const int maxAttachmentSize = 10 * 1024 * 1024; // 10 MB
   
   /// Recommended chunk size (slightly under limit for safety)
-  static const int chunkSize = 24 * 1024 * 1024; // 24 MB
+  static const int chunkSize = 9 * 1024 * 1024; // 9 MB
   
   /// Discord API base URL
   static const String discordApiBase = 'https://discord.com/api/webhooks';
