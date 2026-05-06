@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path/path.dart' as path;
+import 'package:rxdart/rxdart.dart';
 
 import '../models/disbox_file.dart';
 import '../utils/chunk_utils.dart';
@@ -35,6 +36,16 @@ class DisboxService {
   
   // Cache for file metadata (in production, use Hive or SharedPreferences)
   final Map<String, DisboxFile> _fileCache = {};
+  
+  // Stream controllers for progress updates
+  final _uploadProgressController = BehaviorSubject<double>.seeded(0.0);
+  final _downloadProgressController = BehaviorSubject<double>.seeded(0.0);
+  
+  /// Stream of upload progress (0.0 to 1.0)
+  Stream<double> get uploadProgress => _uploadProgressController.stream;
+  
+  /// Stream of download progress (0.0 to 1.0)
+  Stream<double> get downloadProgress => _downloadProgressController.stream;
 
   DisboxService() : _dio = Dio() {
     _dio.options.connectTimeout = const Duration(minutes: 2);
@@ -294,6 +305,9 @@ class DisboxService {
       throw StateError('Webhook URL not configured. Please call setWebhookUrl() first.');
     }
 
+    // Reset upload progress stream
+    _uploadProgressController.add(0.0);
+
     final filename = path.basename(file.path);
     final filePath = _normalizePath('$folderPath/$filename');
     final fileSize = file.lengthSync();
@@ -327,6 +341,10 @@ class DisboxService {
           chunkMessageIds.add(messageId);
           uploadedBytes += chunkData.length;
           
+          // Update progress stream
+          final progress = uploadedBytes / fileSize;
+          _uploadProgressController.add(progress);
+          
           print('Chunk ${i + 1}/${chunks.length} uploaded successfully. Message ID: $messageId');
           onProgress?.call(uploadedBytes, fileSize);
         } catch (e, stackTrace) {
@@ -349,6 +367,10 @@ class DisboxService {
         );
         
         chunkMessageIds.add(messageId);
+        
+        // Update progress stream to complete
+        _uploadProgressController.add(1.0);
+        
         print('Single file uploaded successfully. Message ID: $messageId');
         onProgress?.call(fileSize, fileSize);
       } catch (e, stackTrace) {
@@ -437,6 +459,9 @@ class DisboxService {
       throw ArgumentError('Cannot download a folder');
     }
 
+    // Reset download progress stream
+    _downloadProgressController.add(0.0);
+
     print('Downloading: ${file.name} (${file.chunkMessageIds.length} chunks)');
 
     final chunks = <(int, Uint8List)>[];
@@ -453,11 +478,18 @@ class DisboxService {
       chunks.add((i, chunkData));
       downloadedBytes += chunkData.length;
       
+      // Update progress stream
+      final progress = totalBytes > 0 ? downloadedBytes / totalBytes : 0.0;
+      _downloadProgressController.add(progress);
+      
       onProgress?.call(downloadedBytes, totalBytes);
     }
 
     // Reassemble chunks
     await ChunkUtils.assembleChunks(chunks, outputPath);
+    
+    // Mark download as complete
+    _downloadProgressController.add(1.0);
     
     print('Download complete: $outputPath');
     

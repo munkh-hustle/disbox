@@ -147,14 +147,21 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
     final file = File(filePath);
     
-    // Show progress dialog
+    // Create a controller for progress updates
+    double currentProgress = 0.0;
+    
+    // Show progress dialog with stream
+    final progressDialog = ProgressDialog(
+      title: 'Uploading ${result.files.first.name}',
+      message: 'Please wait...',
+      initialProgress: 0.0,
+      progressStream: _disboxService.uploadProgress,
+    );
+    
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => ProgressDialog(
-        title: 'Uploading ${result.files.first.name}',
-        message: 'Please wait...',
-      ),
+      builder: (context) => progressDialog,
     );
 
     try {
@@ -162,9 +169,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         file,
         folderPath: _currentPath,
         onProgress: (current, total) {
-          // Update progress (you'd need to pass this to the dialog)
-          final percent = (current / total * 100).toInt();
-          print('Upload progress: $percent%');
+          setState(() {
+            currentProgress = current / total;
+          });
         },
       );
 
@@ -246,14 +253,18 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
     final outputPath = '${directory.path}/${file.name}';
     
-    // Show progress dialog
+    // Show progress dialog with stream
+    final progressDialog = ProgressDialog(
+      title: 'Downloading ${file.name}',
+      message: 'Please wait...',
+      initialProgress: 0.0,
+      progressStream: _disboxService.downloadProgress,
+    );
+    
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const ProgressDialog(
-        title: 'Downloading',
-        message: 'Please wait...',
-      ),
+      builder: (context) => progressDialog,
     );
 
     try {
@@ -261,8 +272,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         file,
         outputPath,
         onProgress: (current, total) {
-          final percent = (current / total * 100).toInt();
-          print('Download progress: $percent%');
+          // Progress is already being sent via the stream
         },
       );
 
