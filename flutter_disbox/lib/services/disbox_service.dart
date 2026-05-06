@@ -170,7 +170,7 @@ class DisboxService {
 
   /// Recursively convert Map<dynamic, dynamic> to Map<String, dynamic>
   /// This is needed because Hive/JSON returns Map<dynamic, dynamic> which can't be directly cast
-  Map<String, dynamic>? _convertMapToStringKeys(dynamic data) {
+  dynamic _convertMapToStringKeys(dynamic data) {
     if (data == null) {
       return null;
     } else if (data is Map) {
@@ -182,13 +182,11 @@ class DisboxService {
       }
       return result;
     } else if (data is List) {
-      // Lists should not be passed here, but handle gracefully
-      print('[DisboxService WARNING] Unexpected List in _convertMapToStringKeys, returning null');
-      return null;
+      // Convert list elements recursively
+      return data.map((item) => _convertMapToStringKeys(item)).toList();
     } else {
-      // Primitive types should not be passed here - this indicates a logic error
-      print('[DisboxService ERROR] Unexpected type ${data.runtimeType} in _convertMapToStringKeys, expected Map');
-      return null;
+      // Primitive types (String, int, bool, double, etc.) - return as-is
+      return data;
     }
   }
 
@@ -245,7 +243,11 @@ class DisboxService {
           'updated_at': DateTime.now().toIso8601String(),
         };
       } else {
-        final childrenCount = (_fileTree!['children'] as Map?)?.length ?? 0;
+        final childrenMap = _fileTree!['children'];
+        int childrenCount = 0;
+        if (childrenMap is Map) {
+          childrenCount = childrenMap.length;
+        }
         print('[DisboxService] Loaded file tree with $childrenCount items');
       }
     } else {
@@ -279,6 +281,155 @@ class DisboxService {
     } catch (e) {
       print('[DisboxService ERROR] Failed to save file tree: $e');
     }
+  }
+
+  /// Public method to get the file tree as a List of DisboxFile
+  /// Used for exporting metadata to other devices
+  Future<List<DisboxFile>> getFileTreeList() async {
+    // Check if initialized - if not, return empty list
+    if (_fileTreeBox == null || _webhookUrl == null) {
+      print('[DisboxService] Not initialized yet, returning empty file list');
+      return [];
+    }
+    
+    final result = <DisboxFile>[];
+    
+    if (_fileTree == null) {
+      return result;
+    }
+    
+    // Convert internal file tree structure to flat list of DisboxFile
+    _flattenFileTreeToList(_fileTree!, '/', result);
+    
+    return result;
+  }
+  
+  /// Recursively flatten the file tree structure into a list
+  void _flattenFileTreeToList(Map<String, dynamic> node, String path, List<DisboxFile> result) {
+    final name = node['name'] as String? ?? p.basename(path);
+    final type = node['type'] as String?;
+    final isFolder = type == 'directory';
+    final size = node['size'] as int?;
+    final messageId = node['message_id'] as String?;
+    final createdAtStr = node['created_at'] as String?;
+    final chunkIds = node['chunk_message_ids'] as List?;
+    
+    // Create DisboxFile from the node data
+    final file = DisboxFile(
+      id: messageId ?? path,
+      name: name,
+      path: path,
+      isFolder: isFolder,
+      size: size,
+      mimeType: isFolder ? null : _detectMimeType(name),
+      chunkMessageIds: chunkIds?.cast<String>() ?? [],
+      createdAt: createdAtStr != null ? DateTime.tryParse(createdAtStr) ?? DateTime.now() : DateTime.now(),
+      modifiedAt: DateTime.now(),
+      parentId: path == '/' ? null : p.dirname(path),
+    );
+    
+    result.add(file);
+    
+    // Process children if this is a directory
+    final children = node['children'];
+    if (children is Map && isFolder) {
+      for (final entry in children.entries) {
+        final childName = entry.key as String;
+        final childNode = entry.value as Map<String, dynamic>;
+        final childPath = path == '/' ? '/$childName' : '$path/$childName';
+        _flattenFileTreeToList(childNode, childPath, result);
+      }
+    }
+  }
+
+  /// Public method to save a file tree from imported data
+  /// Used when importing metadata from another device
+  Future<void> saveFileTreeFromList(List<DisboxFile> fileList) async {
+    if (_webhookUrl == null || _fileTreeBox == null) {
+      print('[DisboxService] Cannot save file tree: webhook or Hive not initialized');
+      return;
+    }
+    
+    try {
+      // Convert flat list back to hierarchical structure
+      final root = <String, dynamic>{
+        'id': 'root',
+        'name': 'root',
+        'type': 'directory',
+        'children': <String, dynamic>{},
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      // Sort by path depth to ensure parents are created before children
+      final sortedFiles = List<DisboxFile>.from(fileList)..sort((a, b) => a.path.length.compareTo(b.path.length));
+      
+      for (final file in sortedFiles) {
+        _addFileToTree(root, file);
+      }
+      
+      // Set the reconstructed tree
+      _fileTree = root;
+      
+      // Save to Hive
+      final jsonData = jsonEncode(_fileTree);
+      await _fileTreeBox!.put(_accountId, jsonData);
+      
+      print('[DisboxService] Imported file tree with ${fileList.length} items saved to local storage');
+    } catch (e) {
+      print('[DisboxService ERROR] Failed to save imported file tree: $e');
+      rethrow;
+    }
+  }
+  
+  /// Add a DisboxFile to the tree structure at its path
+  void _addFileToTree(Map<String, dynamic> root, DisboxFile file) {
+    final path = file.path;
+    
+    if (path == '/') {
+      // Root node
+      root['name'] = file.name;
+      return;
+    }
+    
+    final parts = path.split('/').where((p) => p.isNotEmpty).toList();
+    var current = root;
+    
+    // Navigate to parent directory
+    for (int i = 0; i < parts.length - 1; i++) {
+      final part = parts[i];
+      final children = current['children'] as Map<String, dynamic>;
+      
+      if (!children.containsKey(part)) {
+        // Create missing parent directory
+        children[part] = {
+          'id': part,
+          'name': part,
+          'type': 'directory',
+          'children': <String, dynamic>{},
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        };
+      }
+      
+      current = children[part] as Map<String, dynamic>;
+    }
+    
+    // Add the file/folder to its parent
+    final fileName = parts.last;
+    final children = current['children'] as Map<String, dynamic>;
+    
+    children[fileName] = {
+      'id': file.id,
+      'name': file.name,
+      'type': file.isFolder ? 'directory' : 'file',
+      'size': file.size,
+      'message_id': file.id,
+      'chunk_message_ids': file.chunkMessageIds,
+      'created_at': file.createdAt.toIso8601String(),
+      'updated_at': file.modifiedAt.toIso8601String(),
+      if (file.isFolder) 'children': <String, dynamic>{},
+    };
   }
 
   // ==================== FILE OPERATIONS ====================
@@ -565,7 +716,7 @@ class DisboxService {
     if (childrenData is Map) {
       children = <String, dynamic>{};
       for (final entry in childrenData.entries) {
-        children[entry.key.toString()] = entry.value;
+        children[entry.key.toString()] = _convertMapToStringKeys(entry.value) ?? entry.value;
       }
     }
     
@@ -580,7 +731,7 @@ class DisboxService {
         if (node is Map) {
           childNode = <String, dynamic>{};
           for (final entry in node.entries) {
-            childNode[entry.key.toString()] = entry.value;
+            childNode[entry.key.toString()] = _convertMapToStringKeys(entry.value) ?? entry.value;
           }
         }
         
@@ -603,20 +754,46 @@ class DisboxService {
           }
         }
 
+        // Get size - handle both int and num types
+        int? fileSize;
+        final sizeValue = childNode['size'];
+        if (sizeValue is int) {
+          fileSize = sizeValue;
+        } else if (sizeValue is num) {
+          fileSize = sizeValue.toInt();
+        } else if (sizeValue is String) {
+          fileSize = int.tryParse(sizeValue);
+        }
+
+        // Parse dates safely
+        DateTime? createdAt;
+        if (childNode['created_at'] != null) {
+          try {
+            createdAt = DateTime.parse(childNode['created_at'].toString());
+          } catch (_) {
+            createdAt = DateTime.now();
+          }
+        }
+        
+        DateTime? modifiedAt;
+        if (childNode['updated_at'] != null) {
+          try {
+            modifiedAt = DateTime.parse(childNode['updated_at'].toString());
+          } catch (_) {
+            modifiedAt = DateTime.now();
+          }
+        }
+
         final file = DisboxFile(
           id: childNode['id'].toString(),
           name: name,
           path: childPath,
           isFolder: isFolder,
-          size: childNode['size'] as int?,
+          size: fileSize,
           mimeType: !isFolder ? _detectMimeType(name) : null,
           chunkMessageIds: chunkMessageIds,
-          createdAt: childNode['created_at'] != null 
-              ? DateTime.parse(childNode['created_at'] as String) 
-              : DateTime.now(),
-          modifiedAt: childNode['updated_at'] != null 
-              ? DateTime.parse(childNode['updated_at'] as String) 
-              : DateTime.now(),
+          createdAt: createdAt ?? DateTime.now(),
+          modifiedAt: modifiedAt ?? DateTime.now(),
         );
         
         files.add(file);
@@ -874,6 +1051,104 @@ class DisboxService {
     final apiUrl = _getWebhookApiUrl();
     
     await _dio.delete('$apiUrl/messages/$messageId');
+  }
+
+  /// Scan Discord messages to rebuild file tree from remote storage.
+  /// 
+  /// This fetches all messages from the webhook's channel and reconstructs
+  /// the file tree based on metadata messages. Used when importing config
+  /// on a new device or when local cache is corrupted.
+  Future<void> scanRemoteFiles() async {
+    if (!isConfigured) {
+      print('[DisboxService ERROR] scanRemoteFiles called but webhook not configured');
+      throw StateError('Webhook URL not configured');
+    }
+
+    print('[DisboxService] Scanning remote files from Discord...');
+    
+    try {
+      final apiUrl = _getWebhookApiUrl();
+      
+      // Fetch recent messages (Discord limits to 100 per request)
+      // For a full implementation, you'd need to paginate through all messages
+      final response = await _dio.get(
+        '$apiUrl/messages',
+        queryParameters: {'limit': '100'},
+      );
+      
+      if (response.statusCode != 200) {
+        print('[DisboxService WARNING] Failed to fetch messages: ${response.statusCode}');
+        return;
+      }
+      
+      final messages = response.data as List;
+      print('[DisboxService] Fetched ${messages.length} messages from Discord');
+      
+      // Initialize empty file tree
+      _fileTree = {
+        'id': 'root',
+        'name': 'root',
+        'type': 'directory',
+        'children': {},
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      
+      int metadataCount = 0;
+      
+      // Process each message looking for metadata
+      for (final msg in messages) {
+        final content = msg['content'] as String?;
+        if (content == null || !content.startsWith(DisboxConstants.boxPrefix)) {
+          continue;
+        }
+        
+        try {
+          // Extract JSON from message content
+          final jsonStr = content.substring(DisboxConstants.boxPrefix.length).trim();
+          final metadata = jsonDecode(jsonStr) as Map<String, dynamic>;
+          
+          // Skip if not our metadata format
+          if (metadata['type'] != 'disbox_metadata') {
+            continue;
+          }
+          
+          metadataCount++;
+          
+          final filename = metadata['name'] as String;
+          final filePath = metadata['path'] as String;
+          final size = metadata['size'] as int? ?? 0;
+          final mimeType = metadata['mimeType'] as String?;
+          final chunkIds = (metadata['chunkIds'] as List?)?.map((e) => e.toString()).toList() ?? [];
+          final isFolder = metadata['isFolder'] as bool? ?? false;
+          final createdAt = metadata['createdAt'] as String?;
+          
+          // Add file/folder to tree
+          await _addFileToFileTree(
+            id: msg['id'] as String,
+            name: filename,
+            path: filePath,
+            size: size,
+            mimeType: mimeType ?? 'application/octet-stream',
+            chunkMessageIds: chunkIds,
+          );
+          
+          print('[DisboxService] Found: ${isFolder ? "folder" : "file"} "$filename" at $filePath');
+        } catch (e) {
+          print('[DisboxService WARNING] Failed to parse message metadata: $e');
+        }
+      }
+      
+      print('[DisboxService] Remote scan complete. Found $metadataCount metadata messages.');
+      
+      // Save rebuilt file tree
+      await _saveFileTree();
+      
+    } catch (e, stackTrace) {
+      print('[DisboxService ERROR] Failed to scan remote files: $e');
+      print('[DisboxService ERROR] Stack: $stackTrace');
+      rethrow;
+    }
   }
 
   /// Fetch messages from the webhook channel.
