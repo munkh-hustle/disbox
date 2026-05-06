@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:path/path.dart' as p;
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
@@ -389,7 +390,7 @@ class DisboxService {
 
       _fileCache[disboxFile.id] = disboxFile;
       
-      print('Upload complete: ${file.name} -> $filePath');
+      print('Upload complete: ${p.basename(file.path)} -> $filePath');
       return disboxFile;
     } catch (e, stackTrace) {
       print('[METADATA ERROR] Failed to create metadata message: $e');
