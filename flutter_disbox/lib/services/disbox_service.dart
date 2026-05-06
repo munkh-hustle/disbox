@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
@@ -88,10 +89,37 @@ class DisboxService {
     ));
   }
 
-  /// Initialize Hive for local storage
+  /// Initialize Hive for local storage and cleanup old temp files
   Future<void> _initHive() async {
     await Hive.initFlutter();
     _fileTreeBox = await Hive.openBox(_fileTreeBoxName);
+    
+    // Cleanup any leftover temp files from previous sessions
+    await _cleanupTempFiles();
+  }
+
+  /// Clean up temporary files in the cache directory
+  Future<void> _cleanupTempFiles() async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      print('[DisboxService] Cleaning up temp files in: ${tempDir.path}');
+      
+      // Only delete .part files and known temp patterns to avoid deleting other app data
+      await for (final entity in tempDir.list()) {
+        if (entity is File) {
+          final filename = path.basename(entity.path);
+          // Delete chunk temp files (*.part*) or download temp files
+          if (filename.contains('.part') || 
+              filename.startsWith('disbox_temp_') ||
+              filename.endsWith('.tmp')) {
+            await entity.delete();
+            print('[DisboxService] Deleted stale temp file: $filename');
+          }
+        }
+      }
+    } catch (e) {
+      print('[DisboxService WARNING] Failed to cleanup temp files: $e');
+    }
   }
 
   /// Set the webhook URL and generate account ID from it.
@@ -621,9 +649,11 @@ class DisboxService {
   /// Download a file from Discord.
   /// 
   /// For chunked files, downloads all chunks and reassembles them.
+  /// The outputPath should be a temporary location - caller is responsible
+  /// for moving/copying to final destination and cleaning up.
   /// 
   /// [file] - The DisboxFile metadata object
-  /// [outputPath] - Where to save the downloaded file
+  /// [outputPath] - Where to save the downloaded file (should be temp directory)
   /// [onProgress] - Optional callback for download progress
   Future<File> downloadFile(
     DisboxFile file,
@@ -639,6 +669,12 @@ class DisboxService {
       throw ArgumentError('Cannot download a folder');
     }
 
+    // Validate that outputPath is in temp directory to prevent accidental permanent storage
+    final tempDir = await getTemporaryDirectory();
+    if (!outputPath.startsWith(tempDir.path)) {
+      print('[DisboxService WARNING] Download path $outputPath is not in temp directory. Consider using getTemporaryDirectory().');
+    }
+
     // Reset download progress stream
     _downloadProgressController.add(0.0);
 
@@ -648,32 +684,48 @@ class DisboxService {
     var downloadedBytes = 0;
     final totalBytes = file.size ?? 0;
 
-    // Download each chunk
-    for (int i = 0; i < file.chunkMessageIds.length; i++) {
-      final messageId = file.chunkMessageIds[i];
-      
-      print('Downloading chunk ${i + 1}/${file.chunkMessageIds.length}');
-      
-      final chunkData = await _downloadAttachment(messageId);
-      chunks.add((i, chunkData));
-      downloadedBytes += chunkData.length;
-      
-      // Update progress stream
-      final progress = totalBytes > 0 ? downloadedBytes / totalBytes : 0.0;
-      _downloadProgressController.add(progress);
-      
-      onProgress?.call(downloadedBytes, totalBytes);
-    }
+    try {
+      // Download each chunk
+      for (int i = 0; i < file.chunkMessageIds.length; i++) {
+        final messageId = file.chunkMessageIds[i];
+        
+        print('Downloading chunk ${i + 1}/${file.chunkMessageIds.length}');
+        
+        final chunkData = await _downloadAttachment(messageId);
+        chunks.add((i, chunkData));
+        downloadedBytes += chunkData.length;
+        
+        // Update progress stream
+        final progress = totalBytes > 0 ? downloadedBytes / totalBytes : 0.0;
+        _downloadProgressController.add(progress);
+        
+        onProgress?.call(downloadedBytes, totalBytes);
+      }
 
-    // Reassemble chunks
-    await ChunkUtils.assembleChunks(chunks, outputPath);
-    
-    // Mark download as complete
-    _downloadProgressController.add(1.0);
-    
-    print('Download complete: $outputPath');
-    
-    return File(outputPath);
+      // Reassemble chunks
+      await ChunkUtils.assembleChunks(chunks, outputPath);
+      
+      // Mark download as complete
+      _downloadProgressController.add(1.0);
+      
+      print('Download complete: $outputPath (${await File(outputPath).length()} bytes)');
+      
+      return File(outputPath);
+    } catch (e, stackTrace) {
+      print('[DOWNLOAD ERROR] Failed to download file: $e');
+      print('[DOWNLOAD ERROR] Stack Trace: $stackTrace');
+      // Cleanup partial download on error
+      try {
+        final outFile = File(outputPath);
+        if (await outFile.exists()) {
+          await outFile.delete();
+          print('[DOWNLOAD CLEANUP] Deleted partial download: $outputPath');
+        }
+      } catch (cleanupError) {
+        print('[DOWNLOAD CLEANUP ERROR] Failed to delete partial file: $cleanupError');
+      }
+      rethrow;
+    }
   }
 
   /// Delete a file or folder.
