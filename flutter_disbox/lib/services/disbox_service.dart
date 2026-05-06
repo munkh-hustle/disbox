@@ -283,66 +283,71 @@ class DisboxService {
     }
   }
 
-  /// Public method to get the file tree as a Map of DisboxFileNode
+  /// Public method to get the file tree as a List of DisboxFile
   /// Used for exporting metadata to other devices
-  Future<Map<String, DisboxFileNode>> getFileTree() async {
+  Future<List<DisboxFile>> getFileTreeList() async {
     await _ensureInitialized();
     
-    final result = <String, DisboxFileNode>{};
+    final result = <DisboxFile>[];
     
     if (_fileTree == null) {
       return result;
     }
     
-    // Convert internal file tree structure to flat map of DisboxFileNode
-    _flattenFileTree(_fileTree!, '/', result);
+    // Convert internal file tree structure to flat list of DisboxFile
+    _flattenFileTreeToList(_fileTree!, '/', result);
     
     return result;
   }
   
-  /// Recursively flatten the file tree structure
-  void _flattenFileTree(Map<String, dynamic> node, String path, Map<String, DisboxFileNode> result) {
+  /// Recursively flatten the file tree structure into a list
+  void _flattenFileTreeToList(Map<String, dynamic> node, String path, List<DisboxFile> result) {
     final name = node['name'] as String? ?? p.basename(path);
     final type = node['type'] as String?;
     final isFolder = type == 'directory';
     final size = node['size'] as int?;
     final messageId = node['message_id'] as String?;
     final createdAtStr = node['created_at'] as String?;
-    final metadata = node['metadata'] as Map<String, dynamic>?;
+    final chunkIds = node['chunk_message_ids'] as List?;
     
-    result[path] = DisboxFileNode(
+    // Create DisboxFile from the node data
+    final file = DisboxFile(
+      id: messageId ?? path,
       name: name,
+      path: path,
       isFolder: isFolder,
       size: size,
-      messageId: messageId,
-      createdAt: createdAtStr != null ? DateTime.tryParse(createdAtStr) : null,
-      metadata: metadata,
+      mimeType: isFolder ? null : _getMimeType(name),
+      chunkMessageIds: chunkIds?.cast<String>() ?? [],
+      createdAt: createdAtStr != null ? DateTime.tryParse(createdAtStr) ?? DateTime.now() : DateTime.now(),
+      modifiedAt: DateTime.now(),
+      parentId: path == '/' ? null : p.dirname(path),
     );
+    
+    result.add(file);
     
     // Process children if this is a directory
     final children = node['children'];
-    if (children is Map && !isFolder) {
-      // This shouldn't happen, but handle it gracefully
-    } else if (children is Map && isFolder) {
+    if (children is Map && isFolder) {
       for (final entry in children.entries) {
         final childName = entry.key as String;
         final childNode = entry.value as Map<String, dynamic>;
         final childPath = path == '/' ? '/$childName' : '$path/$childName';
-        _flattenFileTree(childNode, childPath, result);
+        _flattenFileTreeToList(childNode, childPath, result);
       }
     }
   }
 
   /// Public method to save a file tree from imported data
   /// Used when importing metadata from another device
-  Future<void> saveFileTree(Map<String, DisboxFileNode> fileTreeMap) async {
+  Future<void> saveFileTreeFromList(List<DisboxFile> fileList) async {
     if (_webhookUrl == null || _fileTreeBox == null) {
       print('[DisboxService] Cannot save file tree: webhook or Hive not initialized');
       return;
     }
     
     try {
-      // Convert flat map back to hierarchical structure
+      // Convert flat list back to hierarchical structure
       final root = <String, dynamic>{
         'id': 'root',
         'name': 'root',
@@ -352,12 +357,11 @@ class DisboxService {
         'updated_at': DateTime.now().toIso8601String(),
       };
       
-      // Sort paths by depth to ensure parents are created before children
-      final sortedPaths = fileTreeMap.keys.toList()..sort((a, b) => a.length.compareTo(b.length));
+      // Sort by path depth to ensure parents are created before children
+      final sortedFiles = List<DisboxFile>.from(fileList)..sort((a, b) => a.path.length.compareTo(b.path.length));
       
-      for (final path in sortedPaths) {
-        final node = fileTreeMap[path]!;
-        _addNodeToTree(root, path, node);
+      for (final file in sortedFiles) {
+        _addFileToTree(root, file);
       }
       
       // Set the reconstructed tree
@@ -367,18 +371,20 @@ class DisboxService {
       final jsonData = jsonEncode(_fileTree);
       await _fileTreeBox!.put(_accountId, jsonData);
       
-      print('[DisboxService] Imported file tree with ${fileTreeMap.length} items saved to local storage');
+      print('[DisboxService] Imported file tree with ${fileList.length} items saved to local storage');
     } catch (e) {
       print('[DisboxService ERROR] Failed to save imported file tree: $e');
       rethrow;
     }
   }
   
-  /// Add a node to the tree structure at the specified path
-  void _addNodeToTree(Map<String, dynamic> root, String path, DisboxFileNode node) {
+  /// Add a DisboxFile to the tree structure at its path
+  void _addFileToTree(Map<String, dynamic> root, DisboxFile file) {
+    final path = file.path;
+    
     if (path == '/') {
-      // Root node - shouldn't happen in import, but handle it
-      root['name'] = node.name;
+      // Root node
+      root['name'] = file.name;
       return;
     }
     
@@ -405,19 +411,20 @@ class DisboxService {
       current = children[part] as Map<String, dynamic>;
     }
     
-    // Add the node to its parent
-    final nodeName = parts.last;
+    // Add the file/folder to its parent
+    final fileName = parts.last;
     final children = current['children'] as Map<String, dynamic>;
     
-    children[nodeName] = {
-      'id': node.messageId ?? nodeName,
-      'name': node.name,
-      'type': node.isFolder ? 'directory' : 'file',
-      'size': node.size,
-      'message_id': node.messageId,
-      'created_at': node.createdAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
-      'updated_at': DateTime.now().toIso8601String(),
-      if (node.metadata != null) 'metadata': node.metadata,
+    children[fileName] = {
+      'id': file.id,
+      'name': file.name,
+      'type': file.isFolder ? 'directory' : 'file',
+      'size': file.size,
+      'message_id': file.id,
+      'chunk_message_ids': file.chunkMessageIds,
+      'created_at': file.createdAt.toIso8601String(),
+      'updated_at': file.modifiedAt.toIso8601String(),
+      if (file.isFolder) 'children': <String, dynamic>{},
     };
   }
 

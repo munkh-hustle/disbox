@@ -1,60 +1,40 @@
 ```
-# Dependencies
+# Flutter/Dart
 .dart_tool/
 .build/
+.flutter-plugins
+.flutter-plugin-dependencies
+.packages
+**/ios/.generated/
+**/macos/.generated/
+**/windows/.generated/
+**/linux/.generated/
+**/android/.generated/
+**/web/.generated/
+
+# Build outputs
+/build/
+/ios/Flutter/flutter_assets/
+/android/app/src/main/assets/
+/windows/runner/data/flutter_assets/
+/linux/bundle/data/flutter_assets/
+/macos/Build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
 
 # Logs
 *.log
-
-# Coverage
-coverage/
-
-# Temporary files
 *.tmp
-*.temp
 
 # Environment
 .env
 .env.local
 *.env.*
 
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Flutter specific
-**/pubspec.lock
-**/pubspec_overrides.yaml
-**/packages/
-**/build/
-**/ios/Pods/
-**/ios/.symlinks/
-**/android/.gradle/
-**/android/local.properties
-**/android/key.properties
-**/android/app/key.properties
-**/android/gradlew
-**/android/gradlew.bat
-**/android/gradle/wrapper/
-**/android/build/
-**/android/app/build/
-**/ios/Flutter/flutter_assets/
-**/ios/Flutter/App.framework/
-**/ios/Flutter/Flutter.framework/
-**/ios/Flutter/Flutter.podspec
-**/ios/Default-Debug.xcconfig
-**/ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
-**/ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme
-**/ios/Runner.xcworkspace/contents.xcworkspacedata
-**/ios/Runner.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
-**/ios/Runner.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
-**/ios/Podfile.lock
-**/ios/Pods/
-**/ios/build/
-**/linux/flutter/ephemeral/
-**/linux/flutter/generated_config.mk
-**/linux/out/
-**/windows/flutter/ephemeral/
-**/windows/runner/
-**/windows/out/
+# Dependencies
+pubspec.lock
 ```

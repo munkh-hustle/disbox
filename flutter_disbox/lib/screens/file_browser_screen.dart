@@ -662,23 +662,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         return;
       }
       
-      // Get the entire file tree from local storage
-      final fileTree = await _service.getFileTree();
+      // Get the entire file tree from local storage as a list of DisboxFile
+      final fileList = await _service.getFileTreeList();
       
-      // Convert file tree to list of maps for JSON serialization
-      final fileList = <Map<String, dynamic>>[];
-      for (final entry in fileTree.entries) {
-        final node = entry.value;
-        fileList.add({
-          'path': entry.key,
-          'name': node.name,
-          'isFolder': node.isFolder,
-          'size': node.size,
-          'messageId': node.messageId,
-          'createdAt': node.createdAt?.toIso8601String(),
-          'metadata': node.metadata,
-        });
-      }
+      // Convert DisboxFile list to JSON-serializable format
+      final fileListJson = fileList.map((file) => file.toJson()).toList();
 
       // Create JSON data with config AND file tree
       final jsonData = jsonEncode({
@@ -686,7 +674,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         'account_id': accountId,
         'exported_at': DateTime.now().toIso8601String(),
         'version': '2.0',
-        'file_tree': fileList,
+        'file_tree': fileListJson,
       });
       
       // Share the JSON data
@@ -778,32 +766,23 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('webhook_url', webhookUrl);
       await prefs.setString('account_id', accountId);
-      
+
       // Import file tree if available (version 2.0+)
       if (data.containsKey('file_tree') && data['file_tree'] is List) {
-        final fileList = data['file_tree'] as List;
-        final fileTree = <String, DisboxFileNode>{};
+        final fileListJson = data['file_tree'] as List;
         
-        for (final item in fileList) {
+        // Convert JSON list to DisboxFile objects
+        final fileList = <DisboxFile>[];
+        for (final item in fileListJson) {
           if (item is Map<String, dynamic>) {
-            final path = item['path'] as String;
-            final node = DisboxFileNode(
-              name: item['name'] as String,
-              isFolder: item['isFolder'] as bool,
-              size: item['size'] as int?,
-              messageId: item['messageId'] as String?,
-              createdAt: item['createdAt'] != null 
-                ? DateTime.tryParse(item['createdAt'] as String) 
-                : null,
-              metadata: item['metadata'] as Map<String, dynamic>?,
-            );
-            fileTree[path] = node;
+            fileList.add(DisboxFile.fromJson(item));
           }
         }
         
         // Save the imported file tree to local storage
-        await _disboxService.saveFileTree(fileTree);
+        await _disboxService.saveFileTreeFromList(fileList);
       }
+      
       
       // Reinitialize the service with the new configuration
       await _disboxService.setWebhookUrl(webhookUrl);
