@@ -135,8 +135,10 @@ class DisboxService {
 
   /// Recursively convert Map<dynamic, dynamic> to Map<String, dynamic>
   /// This is needed because Hive/JSON returns Map<dynamic, dynamic> which can't be directly cast
-  dynamic _convertMapToStringKeys(dynamic data) {
-    if (data is Map) {
+  Map<String, dynamic>? _convertMapToStringKeys(dynamic data) {
+    if (data == null) {
+      return null;
+    } else if (data is Map) {
       final result = <String, dynamic>{};
       for (final entry in data.entries) {
         final key = entry.key.toString();
@@ -145,9 +147,13 @@ class DisboxService {
       }
       return result;
     } else if (data is List) {
-      return data.map((item) => _convertMapToStringKeys(item)).toList();
+      // Lists should not be passed here, but handle gracefully
+      print('[DisboxService WARNING] Unexpected List in _convertMapToStringKeys, returning null');
+      return null;
     } else {
-      return data;
+      // Primitive types should not be passed here - this indicates a logic error
+      print('[DisboxService ERROR] Unexpected type ${data.runtimeType} in _convertMapToStringKeys, expected Map');
+      return null;
     }
   }
 
@@ -191,8 +197,22 @@ class DisboxService {
       // Decode from JSON string and convert Map<dynamic, dynamic> to Map<String, dynamic>
       final decoded = jsonDecode(storedData as String);
       _fileTree = _convertMapToStringKeys(decoded);
-      final childrenCount = (_fileTree!['children'] as Map?)?.length ?? 0;
-      print('[DisboxService] Loaded file tree with $childrenCount items');
+      
+      // Handle case where conversion returns null
+      if (_fileTree == null) {
+        print('[DisboxService WARNING] File tree conversion returned null, initializing empty tree');
+        _fileTree = {
+          'id': 'root',
+          'name': 'root',
+          'type': 'directory',
+          'children': {},
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        };
+      } else {
+        final childrenCount = (_fileTree!['children'] as Map?)?.length ?? 0;
+        print('[DisboxService] Loaded file tree with $childrenCount items');
+      }
     } else {
       // Initialize empty file tree if none found
       _fileTree = {
@@ -449,7 +469,15 @@ class DisboxService {
     }
 
     // Extract children from the file tree
-    final children = targetFolder['children'] as Map<String, dynamic>?;
+    final childrenData = targetFolder['children'];
+    Map<String, dynamic>? children;
+    if (childrenData is Map) {
+      children = <String, dynamic>{};
+      for (final entry in childrenData.entries) {
+        children[entry.key.toString()] = entry.value;
+      }
+    }
+    
     if (children == null) {
       return [];
     }
@@ -457,7 +485,19 @@ class DisboxService {
     // Convert file tree nodes to DisboxFile objects
     children.forEach((name, node) {
       try {
-        final childNode = node as Map<String, dynamic>;
+        Map<String, dynamic>? childNode;
+        if (node is Map) {
+          childNode = <String, dynamic>{};
+          for (final entry in node.entries) {
+            childNode[entry.key.toString()] = entry.value;
+          }
+        }
+        
+        if (childNode == null) {
+          print('[DisboxService WARNING] Skipping invalid node: $name');
+          return;
+        }
+        
         final childPath = '$folderPath/$name';
         final isFolder = childNode['type'] == 'directory';
         
@@ -518,11 +558,29 @@ class DisboxService {
     final parts = path.split('/').where((p) => p.isNotEmpty).toList();
     
     for (final part in parts) {
-      final children = currentNode?['children'] as Map<String, dynamic>?;
+      final childrenData = currentNode?['children'];
+      Map<String, dynamic>? children;
+      if (childrenData is Map) {
+        children = <String, dynamic>{};
+        for (final entry in childrenData.entries) {
+          children[entry.key.toString()] = entry.value;
+        }
+      }
+      
       if (children == null || !children.containsKey(part)) {
         return null;
       }
-      currentNode = children[part] as Map<String, dynamic>?;
+      
+      Map<String, dynamic>? nextNode;
+      final nodeData = children[part];
+      if (nodeData is Map) {
+        nextNode = <String, dynamic>{};
+        for (final entry in nodeData.entries) {
+          nextNode[entry.key.toString()] = entry.value;
+        }
+      }
+      
+      currentNode = nextNode;
       
       // Verify it's a directory
       if (currentNode?['type'] != 'directory') {
@@ -551,7 +609,15 @@ class DisboxService {
     }
 
     // Check if folder already exists
-    final children = parentFolder['children'] as Map<String, dynamic>?;
+    final childrenData = parentFolder['children'];
+    Map<String, dynamic>? children;
+    if (childrenData is Map) {
+      children = <String, dynamic>{};
+      for (final entry in childrenData.entries) {
+        children[entry.key.toString()] = entry.value;
+      }
+    }
+    
     if (children != null && children.containsKey(name)) {
       throw Exception('Folder already exists: $name');
     }
@@ -833,9 +899,25 @@ class DisboxService {
     
     for (int i = 0; i < parts.length - 1; i++) {
       final folderName = parts[i];
-      final children = currentFolder!['children'] as Map<String, dynamic>?;
+      final childrenData = currentFolder!['children'];
+      Map<String, dynamic>? children;
+      if (childrenData is Map) {
+        children = <String, dynamic>{};
+        for (final entry in childrenData.entries) {
+          children[entry.key.toString()] = entry.value;
+        }
+      }
+      
       if (children != null && children.containsKey(folderName)) {
-        currentFolder = children[folderName] as Map<String, dynamic>;
+        Map<String, dynamic>? nextFolder;
+        final folderData = children[folderName];
+        if (folderData is Map) {
+          nextFolder = <String, dynamic>{};
+          for (final entry in folderData.entries) {
+            nextFolder[entry.key.toString()] = entry.value;
+          }
+        }
+        currentFolder = nextFolder;
       } else {
         print('Parent folder not found: $folderName');
         return;
@@ -856,7 +938,17 @@ class DisboxService {
     };
 
     // Add to parent's children
-    final children = currentFolder!['children'] as Map<String, dynamic>? ?? {};
+    final childrenData = currentFolder!['children'];
+    Map<String, dynamic> children;
+    if (childrenData is Map) {
+      children = <String, dynamic>{};
+      for (final entry in childrenData.entries) {
+        children[entry.key.toString()] = entry.value;
+      }
+    } else {
+      children = <String, dynamic>{};
+    }
+    
     children[fileName] = fileNode;
     currentFolder['children'] = children;
 
@@ -883,9 +975,25 @@ class DisboxService {
     // Navigate to parent folder
     for (int i = 0; i < parts.length - 1; i++) {
       final folderName = parts[i];
-      final children = currentFolder!['children'] as Map<String, dynamic>?;
+      final childrenData = currentFolder!['children'];
+      Map<String, dynamic>? children;
+      if (childrenData is Map) {
+        children = <String, dynamic>{};
+        for (final entry in childrenData.entries) {
+          children[entry.key.toString()] = entry.value;
+        }
+      }
+      
       if (children != null && children.containsKey(folderName)) {
-        currentFolder = children[folderName] as Map<String, dynamic>;
+        Map<String, dynamic>? nextFolder;
+        final folderData = children[folderName];
+        if (folderData is Map) {
+          nextFolder = <String, dynamic>{};
+          for (final entry in folderData.entries) {
+            nextFolder[entry.key.toString()] = entry.value;
+          }
+        }
+        currentFolder = nextFolder;
       } else {
         print('Parent folder not found: $folderName');
         return;
@@ -894,9 +1002,18 @@ class DisboxService {
 
     // Remove from parent's children
     final fileName = parts.last;
-    final children = currentFolder!['children'] as Map<String, dynamic>?;
+    final childrenData = currentFolder!['children'];
+    Map<String, dynamic>? children;
+    if (childrenData is Map) {
+      children = <String, dynamic>{};
+      for (final entry in childrenData.entries) {
+        children[entry.key.toString()] = entry.value;
+      }
+    }
+    
     if (children != null && children.containsKey(fileName)) {
       children.remove(fileName);
+      currentFolder['children'] = children;
       
       // Save file tree to local storage
       await _saveFileTree();
