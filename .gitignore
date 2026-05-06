@@ -1,31 +1,36 @@
 ```
-# Flutter/Dart
-.dart_tool/
-.packages
-.pub-cache/
-pubspec.lock
-build/
+# Build artifacts
+/build/
+/dist/
+/out/
 
-# Android
-android/.gradle/
-android/build/
-android/app/build/
-*.apk
-*.aar
+# Dependencies
+/.dart_tool/
+/pub/
+node_modules/
 
-# iOS
-ios/Pods/
-ios/build/
-*.ipa
+# Logs
+*.log
 
-# General
-.DS_Store
-Thumbs.db
+# Environment variables
 .env
 .env.local
-*.env.*
-*.log
-*.tmp
+*.env
+
+# IDE files
 .vscode/
 .idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Coverage
+/coverage/
+
+# Temporary files
+*.tmp
+*.temp
 ```

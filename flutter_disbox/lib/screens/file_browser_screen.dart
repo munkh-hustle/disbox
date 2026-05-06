@@ -371,7 +371,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  'Size: ${_formatFileSize(file.size)}',
+                  'Size: ${_formatFileSize(file.size ?? 0)}',
                   style: const TextStyle(fontSize: 12),
                 ),
               ],
