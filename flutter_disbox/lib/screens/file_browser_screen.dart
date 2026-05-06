@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 
 import '../services/disbox_service.dart';
@@ -20,67 +21,91 @@ class FileBrowserScreen extends StatefulWidget {
 }
 
 class _FileBrowserScreenState extends State<FileBrowserScreen> {
-  final DisboxService _disboxService = DisboxService();
+  late final DisboxService _disboxService;
   
   List<DisboxFile> _files = [];
   String _currentPath = '/';
   bool _isLoading = false;
   String? _error;
+  bool _isInitialized = false;
 
   @override
   void initState() {
     super.initState();
-    _loadFiles();
+    _disboxService = DisboxService();
+    _initializeService();
   }
 
-  /// Load files in current folder
-  Future<void> _loadFiles() async {
+  /// Initialize the service with the saved webhook URL
+  Future<void> _initializeService() async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
     try {
-      // For MVP, we'll use mock data since message fetching isn't fully implemented
-      // In production, uncomment: final files = await _disboxService.listFiles(folderPath: _currentPath);
-      await Future.delayed(const Duration(milliseconds: 500)); // Simulate network delay
+      print('[DEBUG] Initializing DisboxService...');
       
-      // Mock data for demonstration
-      final mockFiles = [
-        DisboxFile(
-          id: '1',
-          name: 'Documents',
-          path: '/Documents',
-          isFolder: true,
-          createdAt: DateTime.now(),
-          modifiedAt: DateTime.now(),
-        ),
-        DisboxFile(
-          id: '2',
-          name: 'Photos',
-          path: '/Photos',
-          isFolder: true,
-          createdAt: DateTime.now(),
-          modifiedAt: DateTime.now(),
-        ),
-        DisboxFile(
-          id: '3',
-          name: 'example.pdf',
-          path: '/example.pdf',
-          isFolder: false,
-          size: 1024 * 512, // 512 KB
-          mimeType: 'application/pdf',
-          chunkMessageIds: ['msg1'],
-          createdAt: DateTime.now(),
-          modifiedAt: DateTime.now(),
-        ),
-      ];
+      // Load webhook URL from SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final webhookUrl = prefs.getString('webhook_url');
+      final accountId = prefs.getString('account_id');
+      
+      print('[DEBUG] Loaded webhook_url: ${webhookUrl != null ? "exists" : "null"}');
+      print('[DEBUG] Loaded account_id: ${accountId ?? "null"}');
+      
+      if (webhookUrl == null || webhookUrl.isEmpty) {
+        throw Exception('No webhook URL configured. Please set up your webhook URL first.');
+      }
+      
+      // Set the webhook URL in the service (this also loads the file tree from Hive)
+      await _disboxService.setWebhookUrl(webhookUrl);
+      
+      print('[DEBUG] Service initialized successfully');
+      print('[DEBUG] Service isConfigured: ${_disboxService.isConfigured}');
+      print('[DEBUG] Service accountId: ${_disboxService.accountId ?? "null"}');
       
       setState(() {
-        _files = mockFiles;
+        _isInitialized = true;
+      });
+      
+      // Now load files
+      await _loadFiles();
+    } catch (e) {
+      print('[DEBUG ERROR] Failed to initialize service: $e');
+      setState(() {
+        _error = 'Initialization error: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  /// Load files in current folder
+  Future<void> _loadFiles() async {
+    if (!_isInitialized) {
+      print('[DEBUG] Cannot load files: service not initialized yet');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      print('[DEBUG] Loading files from path: $_currentPath');
+      
+      // Fetch files from backend server via DisboxService
+      final files = await _disboxService.listFiles(folderPath: _currentPath);
+      
+      print('[DEBUG] Loaded ${files.length} files');
+      
+      setState(() {
+        _files = files;
         _isLoading = false;
       });
     } catch (e) {
+      print('[DEBUG ERROR] Failed to load files: $e');
       setState(() {
         _error = e.toString();
         _isLoading = false;

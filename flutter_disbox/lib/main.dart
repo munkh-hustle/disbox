@@ -102,15 +102,22 @@ class _AppStartupState extends State<AppStartup> {
   /// Check if webhook URL is configured
   Future<void> _checkSetup() async {
     try {
+      print('[AppStartup] Checking setup...');
       final prefs = await SharedPreferences.getInstance();
       final webhookUrl = prefs.getString('webhook_url');
+      final accountId = prefs.getString('account_id');
+      
+      print('[AppStartup] Loaded webhook_url: ${webhookUrl != null ? "exists (${webhookUrl.length} chars)" : "null"}');
+      print('[AppStartup] Loaded account_id: ${accountId ?? "null"}');
       
       setState(() {
         _hasWebhook = webhookUrl != null && webhookUrl.isNotEmpty;
         _isLoading = false;
       });
+      
+      print('[AppStartup] Navigation decision: hasWebhook=$_hasWebhook');
     } catch (e) {
-      print('Error checking setup: $e');
+      print('[AppStartup ERROR] Error checking setup: $e');
       setState(() {
         _isLoading = false;
       });
