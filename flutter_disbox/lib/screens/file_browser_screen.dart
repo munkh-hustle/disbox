@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:open_file/open_file.dart';
 import 'dart:io';
 
 import '../services/disbox_service.dart';
@@ -28,6 +29,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   bool _isLoading = false;
   String? _error;
   bool _isInitialized = false;
+  bool _isPickingFile = false; // Prevent multiple file picker invocations
 
   @override
   void initState() {
@@ -134,53 +136,113 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   /// Upload a file
   Future<void> _uploadFile() async {
-    // Pick file from device
-    final result = await FilePicker.pickFiles(
-      type: FileType.any,
-      allowMultiple: false,
-    );
-
-    if (result == null || result.files.isEmpty) return;
-
-    final filePath = result.files.first.path;
-    if (filePath == null) return;
-
-    final file = File(filePath);
-    
-    // Show progress dialog
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => ProgressDialog(
-        title: 'Uploading ${result.files.first.name}',
-        message: 'Please wait...',
-      ),
-    );
+    // Prevent multiple simultaneous file picker invocations
+    if (_isPickingFile) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('File picker is already open')),
+      );
+      return;
+    }
 
     try {
-      await _disboxService.uploadFile(
-        file,
-        folderPath: _currentPath,
-        onProgress: (current, total) {
-          // Update progress (you'd need to pass this to the dialog)
-          final percent = (current / total * 100).toInt();
-          print('Upload progress: $percent%');
-        },
+      setState(() => _isPickingFile = true);
+      
+      // Pick file from device
+      final result = await FilePicker.pickFiles(
+        type: FileType.any,
+        allowMultiple: false,
       );
 
-      if (mounted) Navigator.pop(context); // Close progress dialog
+      if (result == null || result.files.isEmpty) return;
+
+      final filePath = result.files.first.path;
+      if (filePath == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to access file path')),
+        );
+        return;
+      }
+
+      final file = File(filePath);
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('File uploaded successfully')),
+      // Check file size and warn for very large files
+      final fileSize = await file.length();
+      final fileSizeMB = fileSize / (1024 * 1024);
+      
+      if (fileSizeMB > 500) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Large File Warning'),
+            content: Text(
+              'The file you selected is ${fileSizeMB.toStringAsFixed(1)} MB. '
+              'Uploading large files may take a long time and could fail due to network issues or rate limits.\n\n'
+              'Do you want to continue?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Continue'),
+              ),
+            ],
+          ),
+        );
+        
+        if (confirmed != true) return;
+      }
+      
+      // Create a controller for progress updates
+      double currentProgress = 0.0;
+      
+      // Show progress dialog with stream
+      final progressDialog = ProgressDialog(
+        title: 'Uploading ${result.files.first.name}',
+        message: '${fileSizeMB.toStringAsFixed(1)} MB - Please wait...',
+        initialProgress: 0.0,
+        progressStream: _disboxService.uploadProgress,
       );
       
-      _loadFiles(); // Refresh file list
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => progressDialog,
+      );
+
+      try {
+        await _disboxService.uploadFile(
+          file,
+          folderPath: _currentPath,
+          onProgress: (current, total) {
+            setState(() {
+              currentProgress = current / total;
+            });
+          },
+        );
+
+        if (mounted) Navigator.pop(context); // Close progress dialog
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('File uploaded successfully')),
+        );
+        
+        _loadFiles(); // Refresh file list
+      } catch (e) {
+        if (mounted) Navigator.pop(context); // Close progress dialog
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Upload failed: $e')),
+        );
+      }
     } catch (e) {
-      if (mounted) Navigator.pop(context); // Close progress dialog
-      
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Upload failed: $e')),
+        SnackBar(content: Text('Error picking file: $e')),
       );
+    } finally {
+      if (mounted) setState(() => _isPickingFile = false);
     }
   }
 
@@ -235,8 +297,27 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   /// Download a file
   Future<void> _downloadFile(DisboxFile file) async {
-    // Get downloads directory
-    final directory = await getExternalStorageDirectory();
+    // Get downloads directory - use public Downloads folder
+    Directory? directory;
+    
+    // Try to get the public Downloads directory first
+    try {
+      // For Android 10+ we need to use external storage directories
+      final externalDirs = await getExternalStorageDirectories(
+        type: StorageDirectory.downloads,
+      );
+      if (externalDirs != null && externalDirs.isNotEmpty) {
+        directory = externalDirs.first;
+      }
+    } catch (e) {
+      print('Error getting downloads directory: $e');
+    }
+    
+    // Fallback to app's external storage directory
+    if (directory == null) {
+      directory = await getExternalStorageDirectory();
+    }
+    
     if (directory == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Cannot access storage')),
@@ -246,14 +327,18 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
     final outputPath = '${directory.path}/${file.name}';
     
-    // Show progress dialog
+    // Show progress dialog with stream
+    final progressDialog = ProgressDialog(
+      title: 'Downloading ${file.name}',
+      message: 'Preparing download...',
+      initialProgress: 0.0,
+      progressStream: _disboxService.downloadProgress,
+    );
+    
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const ProgressDialog(
-        title: 'Downloading',
-        message: 'Please wait...',
-      ),
+      builder: (context) => progressDialog,
     );
 
     try {
@@ -261,16 +346,72 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         file,
         outputPath,
         onProgress: (current, total) {
-          final percent = (current / total * 100).toInt();
-          print('Download progress: $percent%');
+          // Progress is already being sent via the stream
         },
       );
 
       if (mounted) Navigator.pop(context); // Close progress dialog
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Saved to: $outputPath')),
-      );
+      // Show success message with option to open file
+      if (mounted) {
+        final openResult = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Download Complete'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('File downloaded successfully!'),
+                const SizedBox(height: 8),
+                Text(
+                  'Location: ${outputPath}',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  'Size: ${_formatFileSize(file.size ?? 0)}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('OK'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () => Navigator.pop(context, true),
+                icon: const Icon(Icons.open_in_browser),
+                label: const Text('Open File'),
+              ),
+            ],
+          ),
+        );
+        
+        if (openResult == true) {
+          // Try to open the file
+          final result = await OpenFile.open(outputPath);
+          if (result.type != ResultType.done) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Cannot open file: ${result.message}')),
+              );
+            }
+          }
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Saved to: $outputPath'),
+              action: SnackBarAction(
+                label: 'Open',
+                onPressed: () => OpenFile.open(outputPath),
+              ),
+            ),
+          );
+        }
+      }
     } catch (e) {
       if (mounted) Navigator.pop(context); // Close progress dialog
       
@@ -278,6 +419,14 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         SnackBar(content: Text('Download failed: $e')),
       );
     }
+  }
+  
+  /// Format file size for display
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
   /// Delete a file or folder

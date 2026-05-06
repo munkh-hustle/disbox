@@ -32,6 +32,8 @@ dependencies:
   crypto: ^3.0.3
   path: ^1.8.3
   mime: ^2.0.0
+  rxdart: ^0.28.0
+  open_file: ^3.3.2
 
 dev_dependencies:
   flutter_test:
