@@ -1,28 +1,26 @@
 ```
-# Build artifacts
-/build/
-/ios/Flutter/flutter_assets/
-/android/app/build/
-/android/.gradle/
-**/generated_plugin_registrant.*
+# Flutter/Dart
+.dart_tool/
+.build/
+pubspec.lock
+*.g.dart
+*.freezed.dart
 
 # Dependencies
-/pubspec.lock
-
-# Environment
-.env
-.env.local
-*.env.*
+.pub/
+build/
 
 # Logs
 *.log
-**/logs/
 
-# Coverage
-/coverage/
+# Environment variables
+.env
+.env.local
+*.env
 
-# Temporary files
-*.tmp
+# IDE
+.vscode/
+.idea/
 *.swp
 *.swo
 
@@ -30,10 +28,11 @@
 .DS_Store
 Thumbs.db
 
-# IDE specific
-.idea/
-.vscode/
-*.iml
-*.ipr
-*.iws
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Temp files
+*.tmp
 ```

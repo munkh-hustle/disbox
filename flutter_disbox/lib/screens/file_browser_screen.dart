@@ -4,9 +4,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:open_file/open_file.dart';
-import 'package:file_saver/file_saver.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:math' as math;
 
 import '../services/disbox_service.dart';
 import '../models/disbox_file.dart';
@@ -314,6 +316,29 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     );
 
     try {
+      // Request storage permission for Android 12 and below
+      if (Platform.isAndroid) {
+        final androidInfo = await DeviceInfoPlugin().androidInfo;
+        if (androidInfo.version.sdkInt <= 28) {
+          var status = await Permission.storage.status;
+          if (!status.isGranted) {
+            status = await Permission.storage.request();
+            if (!status.isGranted) {
+              throw Exception('Storage permission is required to save files');
+            }
+          }
+        } else if (androidInfo.version.sdkInt >= 30) {
+          // For Android 11+, request MANAGE_EXTERNAL_STORAGE
+          var status = await Permission.manageExternalStorage.status;
+          if (!status.isGranted) {
+            status = await Permission.manageExternalStorage.request();
+            if (!status.isGranted) {
+              throw Exception('Manage external storage permission is required');
+            }
+          }
+        }
+      }
+
       // Download to temporary file first
       final tempDir = await getTemporaryDirectory();
       final tempPath = '${tempDir.path}/${file.name}';
@@ -331,20 +356,65 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       // Read the downloaded file
       final fileData = await File(tempPath).readAsBytes();
       
-      print('[FileSaver] Saving file: ${file.name} (${fileData.length} bytes)');
+      print('[FileCopy] Saving file: ${file.name} (${fileData.length} bytes)');
       
-      // Save to public Documents folder using file_saver
-      // This will trigger the system save dialog on Android 13+
+      // Save to public Documents folder
       String? savedPath;
       try {
-        savedPath = await FileSaver.instance.saveFile(
-          name: file.name,
-          ext: file.name.contains('.') ? file.name.split('.').last : '',
-          bytes: fileData,
-        );
-        print('[FileSaver] File saved to: $savedPath');
+        // Try to access the public Documents directory
+        Directory? documentsDir;
+        
+        if (Platform.isAndroid) {
+          final androidInfo = await DeviceInfoPlugin().androidInfo;
+          if (androidInfo.version.sdkInt >= 29) {
+            // For Android 10+, use the specific path to Documents
+            documentsDir = Directory('/storage/emulated/0/Documents/Disbox');
+          } else {
+            // For older versions, use external storage directory
+            documentsDir = Directory('/storage/emulated/0/Documents/Disbox');
+          }
+        } else {
+          documentsDir = await getApplicationDocumentsDirectory();
+        }
+        
+        // Create the Disbox subdirectory if it doesn't exist
+        if (!await documentsDir.exists()) {
+          await documentsDir.create(recursive: true);
+        }
+        
+        // Generate unique filename if file already exists
+        String finalFileName = file.name;
+        String finalFilePath = '${documentsDir.path}/$finalFileName';
+        int counter = 1;
+        
+        while (await File(finalFilePath).exists()) {
+          final nameParts = file.name.split('.');
+          if (nameParts.length > 1) {
+            final ext = nameParts.removeLast();
+            final baseName = nameParts.join('.');
+            finalFileName = '${baseName}_$counter.$ext';
+          } else {
+            finalFileName = '${file.name}_$counter';
+          }
+          finalFilePath = '${documentsDir.path}/$finalFileName';
+          counter++;
+        }
+        
+        // Write the file
+        final savedFile = File(finalFilePath);
+        await savedFile.writeAsBytes(fileData);
+        savedPath = savedFile.path;
+        
+        print('[FileCopy] File saved to: $savedPath');
+        
+        // Notify media scanner about the new file (for Android)
+        if (Platform.isAndroid) {
+          // This helps the file appear in gallery/file manager apps
+          // We can't directly call MediaScannerConnection here without platform channel
+          // But creating the file in Documents should be enough
+        }
       } catch (e) {
-        print('[FileSaver ERROR] Failed to save file: $e');
+        print('[FileCopy ERROR] Failed to save file: $e');
         rethrow;
       }
       
@@ -359,7 +429,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${file.name} saved to Documents folder'),
+            content: Text('$finalFileName saved to Documents/Disbox'),
             action: SnackBarAction(
               label: 'OK',
               onPressed: () {},
