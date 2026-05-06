@@ -6,7 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:open_file/open_file.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:share_plus/share_plus.dart';
 import 'dart:io';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:math' as math;
 
@@ -534,10 +536,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               title: const Text('Share'),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: Implement share functionality
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Share feature coming soon')),
-                );
+                _shareMetadata(file);
               },
             ),
             ListTile(
@@ -649,12 +648,207 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     );
   }
 
+  /// Export metadata (webhook URL and account ID) to share with another device
+  Future<void> _exportMetadata() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final webhookUrl = prefs.getString('webhook_url');
+      final accountId = prefs.getString('account_id');
+      
+      if (webhookUrl == null || accountId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No configuration found to export')),
+        );
+        return;
+      }
+      
+      // Create JSON data
+      final jsonData = jsonEncode({
+        'webhook_url': webhookUrl,
+        'account_id': accountId,
+        'exported_at': DateTime.now().toIso8601String(),
+        'version': '1.0',
+      });
+      
+      // Share the JSON data
+      final result = await Share.shareXFiles(
+        [XFile.fromData(
+          Uint8List.fromList(jsonData.codeUnits),
+          name: 'disbox_config.json',
+          mimeType: 'application/json',
+        )],
+        subject: 'Disbox Configuration',
+        text: 'Disbox configuration file. Import this on your other device to sync your Disbox storage.',
+      );
+      
+      if (result.status == ShareResultStatus.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Configuration exported successfully')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Export failed: $e')),
+      );
+    }
+  }
+
+  /// Import metadata from a shared config file
+  Future<void> _importMetadata() async {
+    try {
+      // Pick the config file
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        allowMultiple: false,
+      );
+      
+      if (result == null || result.files.isEmpty) {
+        return;
+      }
+      
+      final filePath = result.files.first.path;
+      if (filePath == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to access selected file')),
+        );
+        return;
+      }
+      
+      // Read and parse the file
+      final fileContent = await File(filePath).readAsString();
+      final data = jsonDecode(fileContent) as Map<String, dynamic>;
+      
+      // Validate the data
+      if (!data.containsKey('webhook_url') || !data.containsKey('account_id')) {
+        throw Exception('Invalid configuration file format');
+      }
+      
+      final webhookUrl = data['webhook_url'] as String;
+      final accountId = data['account_id'] as String;
+      
+      // Confirm import
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Import Configuration'),
+          content: Text(
+            'This will replace your current Disbox configuration with the one from the file.\n\n'
+            'Account ID: ${accountId.substring(0, math.min(20, accountId.length))}...\n\n'
+            'Do you want to continue?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Import'),
+            ),
+          ],
+        ),
+      );
+      
+      if (confirmed != true) {
+        return;
+      }
+      
+      // Save the new configuration
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('webhook_url', webhookUrl);
+      await prefs.setString('account_id', accountId);
+      
+      // Reinitialize the service with the new configuration
+      await _disboxService.setWebhookUrl(webhookUrl);
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Configuration imported successfully')),
+      );
+      
+      // Reload files
+      setState(() {
+        _currentPath = '/';
+      });
+      await _loadFiles();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Import failed: $e')),
+      );
+    }
+  }
+
+  /// Share metadata for a specific file (for advanced users)
+  Future<void> _shareMetadata(DisboxFile file) async {
+    try {
+      // Create JSON data for the file
+      final jsonData = jsonEncode({
+        'name': file.name,
+        'path': file.path,
+        'isFolder': file.isFolder,
+        'size': file.size,
+        'createdAt': file.createdAt.toIso8601String(),
+        'chunkMessageIds': file.chunkMessageIds,
+        'version': '1.0',
+      });
+      
+      // Share the JSON data
+      await Share.shareXFiles(
+        [XFile.fromData(
+          Uint8List.fromList(jsonData.codeUnits),
+          name: '${file.name}.meta.json',
+          mimeType: 'application/json',
+        )],
+        subject: 'Disbox File Metadata: ${file.name}',
+        text: 'Metadata for file "${file.name}" from Disbox.',
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Share failed: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(_currentPath == '/' ? 'Disbox' : _currentPath),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.import_export),
+            onPressed: () {
+              showModalBottomSheet(
+                context: context,
+                builder: (context) => SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.upload_file, color: Colors.blue),
+                        title: const Text('Export Configuration'),
+                        subtitle: const Text('Share webhook URL to another device'),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _exportMetadata();
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.download, color: Colors.green),
+                        title: const Text('Import Configuration'),
+                        subtitle: const Text('Load config from shared file'),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _importMetadata();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+            tooltip: 'Export/Import',
+          ),
           IconButton(
             icon: const Icon(Icons.folder_open),
             onPressed: _createFolder,
