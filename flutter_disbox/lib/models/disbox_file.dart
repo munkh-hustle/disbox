@@ -31,6 +31,16 @@ class DisboxFile {
 
   /// Create from JSON (for storing in Hive/SharedPreferences)
   factory DisboxFile.fromJson(Map<String, dynamic> json) {
+    // Handle both field naming conventions:
+    // - camelCase (from toJson): 'chunkMessageIds'
+    // - snake_case (from exported JSON): 'chunk_message_ids'
+    List<String> chunkIds = [];
+    if (json.containsKey('chunkMessageIds')) {
+      chunkIds = (json['chunkMessageIds'] as List?)?.cast<String>() ?? [];
+    } else if (json.containsKey('chunk_message_ids')) {
+      chunkIds = (json['chunk_message_ids'] as List?)?.cast<String>() ?? [];
+    }
+    
     return DisboxFile(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -38,7 +48,7 @@ class DisboxFile {
       isFolder: json['isFolder'] as bool,
       size: json['size'] as int?,
       mimeType: json['mimeType'] as String?,
-      chunkMessageIds: (json['chunkMessageIds'] as List?)?.cast<String>() ?? [],
+      chunkMessageIds: chunkIds,
       createdAt: DateTime.parse(json['createdAt'] as String),
       modifiedAt: DateTime.parse(json['modifiedAt'] as String),
       parentId: json['parentId'] as String?,

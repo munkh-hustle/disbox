@@ -767,6 +767,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       await prefs.setString('webhook_url', webhookUrl);
       await prefs.setString('account_id', accountId);
 
+      // Reinitialize the service with the new configuration FIRST
+      // This ensures the correct account ID is generated for the new webhook
+      await _disboxService.setWebhookUrl(webhookUrl);
+      
       // Import file tree if available (version 2.0+)
       if (data.containsKey('file_tree') && data['file_tree'] is List) {
         final fileListJson = data['file_tree'] as List;
@@ -780,12 +784,13 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         }
         
         // Save the imported file tree to local storage
+        // Now it will be saved under the correct account ID
         await _disboxService.saveFileTreeFromList(fileList);
+        
+        // CRITICAL: Reload the file tree into memory after saving
+        // The in-memory _fileTree still has the old data from before import
+        await _disboxService.reloadFileTree();
       }
-      
-      
-      // Reinitialize the service with the new configuration
-      await _disboxService.setWebhookUrl(webhookUrl);
       
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Configuration and files imported successfully')),

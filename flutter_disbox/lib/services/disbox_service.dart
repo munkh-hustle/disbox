@@ -283,6 +283,14 @@ class DisboxService {
     }
   }
 
+  /// Reload the file tree from local storage into memory.
+  /// 
+  /// This is needed after importing a file tree to ensure the in-memory cache
+  /// matches what was just saved to disk.
+  Future<void> reloadFileTree() async {
+    await _loadFileTree();
+  }
+
   /// Public method to get the file tree as a List of DisboxFile
   /// Used for exporting metadata to other devices
   Future<List<DisboxFile>> getFileTreeList() async {
@@ -312,7 +320,28 @@ class DisboxService {
     final size = node['size'] as int?;
     final messageId = node['message_id'] as String?;
     final createdAtStr = node['created_at'] as String?;
-    final chunkIds = node['chunk_message_ids'] as List?;
+    
+    // Handle both storage formats: 
+    // - New format (from import): 'chunk_message_ids' as List
+    // - Old format (from upload): 'content' as JSON-encoded string
+    List<String>? chunkIds;
+    if (node.containsKey('chunk_message_ids')) {
+      // New format from import
+      chunkIds = (node['chunk_message_ids'] as List?)?.cast<String>();
+    } else if (node.containsKey('content')) {
+      // Old format from upload - content is JSON-encoded string
+      final content = node['content'] as String?;
+      if (content != null) {
+        try {
+          final decoded = jsonDecode(content);
+          if (decoded is List) {
+            chunkIds = decoded.cast<String>();
+          }
+        } catch (e) {
+          print('[DisboxService WARNING] Failed to decode chunk_message_ids from content: $e');
+        }
+      }
+    }
     
     // Create DisboxFile from the node data
     final file = DisboxFile(
@@ -322,7 +351,7 @@ class DisboxService {
       isFolder: isFolder,
       size: size,
       mimeType: isFolder ? null : _detectMimeType(name),
-      chunkMessageIds: chunkIds?.cast<String>() ?? [],
+      chunkMessageIds: chunkIds ?? [],
       createdAt: createdAtStr != null ? DateTime.tryParse(createdAtStr) ?? DateTime.now() : DateTime.now(),
       modifiedAt: DateTime.now(),
       parentId: path == '/' ? null : p.dirname(path),
