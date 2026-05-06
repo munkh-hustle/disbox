@@ -286,7 +286,11 @@ class DisboxService {
   /// Public method to get the file tree as a List of DisboxFile
   /// Used for exporting metadata to other devices
   Future<List<DisboxFile>> getFileTreeList() async {
-    await _ensureInitialized();
+    // Check if initialized - if not, return empty list
+    if (_fileTreeBox == null || _webhookUrl == null) {
+      print('[DisboxService] Not initialized yet, returning empty file list');
+      return [];
+    }
     
     final result = <DisboxFile>[];
     
@@ -1122,11 +1126,11 @@ class DisboxService {
           // Add file/folder to tree
           await _addFileToFileTree(
             id: msg['id'] as String,
+            name: filename,
             path: filePath,
             size: size,
-            mimeType: mimeType,
+            mimeType: mimeType ?? 'application/octet-stream',
             chunkMessageIds: chunkIds,
-            isFolder: isFolder,
           );
           
           print('[DisboxService] Found: ${isFolder ? "folder" : "file"} "$filename" at $filePath');

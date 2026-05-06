@@ -663,7 +663,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       }
       
       // Get the entire file tree from local storage as a list of DisboxFile
-      final fileList = await _service.getFileTreeList();
+      final fileList = await _disboxService.getFileTreeList();
       
       // Convert DisboxFile list to JSON-serializable format
       final fileListJson = fileList.map((file) => file.toJson()).toList();
