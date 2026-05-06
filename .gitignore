@@ -1,13 +1,14 @@
 ```
-# Build artifacts
-/build/
-/bin/
-/obj/
+# Flutter/Dart specific
+.dart_tool/
+.build/
+.packages
+pubspec.lock
+*.g.dart
+*.freezed.dart
 
 # Dependencies
-/.dart_tool/
-/pub/
-/packages/
+vendor/
 
 # Logs and temp files
 *.log
@@ -17,7 +18,7 @@
 # Environment
 .env
 .env.local
-*.env.*
+.env.*
 
 # Editors
 .vscode/
