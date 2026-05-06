@@ -331,13 +331,22 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       // Read the downloaded file
       final fileData = await File(tempPath).readAsBytes();
       
+      print('[FileSaver] Saving file: ${file.name} (${fileData.length} bytes)');
+      
       // Save to public Documents folder using file_saver
       // This will trigger the system save dialog on Android 13+
-      await FileSaver.instance.saveFile(
-        name: file.name,
-        ext: file.name.contains('.') ? file.name.split('.').last : '',
-        bytes: fileData,
-      );
+      String? savedPath;
+      try {
+        savedPath = await FileSaver.instance.saveFile(
+          name: file.name,
+          ext: file.name.contains('.') ? file.name.split('.').last : '',
+          bytes: fileData,
+        );
+        print('[FileSaver] File saved to: $savedPath');
+      } catch (e) {
+        print('[FileSaver ERROR] Failed to save file: $e');
+        rethrow;
+      }
       
       // Clean up temporary file
       try {
