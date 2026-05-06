@@ -110,7 +110,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   /// Upload a file
   Future<void> _uploadFile() async {
     // Pick file from device
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.any,
       allowMultiple: false,
     );

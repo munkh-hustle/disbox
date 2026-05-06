@@ -427,7 +427,7 @@ class DisboxService {
       'file': MultipartFile.fromBytes(
         data,
         filename: filename,
-        contentType: MediaType.parse(contentType),
+        contentType: DioMediaType.parse(contentType),
       ),
       // Wait=false means don't wait for message processing
       'wait': 'true',
