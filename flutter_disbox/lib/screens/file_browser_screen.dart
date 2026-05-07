@@ -1142,8 +1142,33 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   @override
   Widget build(BuildContext context) {
-    print('[BUILD] FileBrowserScreen.build() called, _isLoading=$_isLoading, _files.length=${_files.length}');
-    
+    try {
+      return _buildBody();
+    } catch (e, stackTrace) {
+      print('[ERROR] Build failed: $e');
+      print('[ERROR] Stack: $stackTrace');
+      return Scaffold(
+        appBar: AppBar(title: const Text('Error')),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text('Build error: $e'),
+              const SizedBox(height: 8),
+              ElevatedButton(
+                onPressed: () => _loadFiles(),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildBody() {
     // Track build count to detect infinite loops
     _buildCount++;
     if (_buildCount > 50) {
@@ -1277,18 +1302,27 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                         : ListView.builder(
                             itemCount: _files.length,
                             itemBuilder: (context, index) {
-                              final file = _files[index];
-                              return FileListTile(
-                                file: file,
-                                onTap: () {
-                                  if (file.isFolder) {
-                                    _navigateToFolder(file.path);
-                                  } else {
-                                    _showOptions(file);
-                                  }
-                                },
-                                onLongPress: () => _showOptions(file),
-                              );
+                              try {
+                                final file = _files[index];
+                                return FileListTile(
+                                  file: file,
+                                  onTap: () {
+                                    if (file.isFolder) {
+                                      _navigateToFolder(file.path);
+                                    } else {
+                                      _showOptions(file);
+                                    }
+                                  },
+                                  onLongPress: () => _showOptions(file),
+                                );
+                              } catch (e, stackTrace) {
+                                print('[ERROR] Building tile $index: $e');
+                                print('[ERROR] Stack: $stackTrace');
+                                return ListTile(
+                                  title: Text('Error loading file $index'),
+                                  subtitle: Text('$e'),
+                                );
+                              }
                             },
                           ),
           ),

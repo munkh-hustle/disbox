@@ -1,29 +1,44 @@
 ```
+# Flutter/Dart specific ignores
+.dart_tool/
+.build/
+.pub-cache/
+*.g.dart
+*.freezed.dart
+*.config.dart
+
 # Build artifacts
-/build/
-/bin/
-/obj/
+build/
+*.apk
+*.aab
+*.app
+*.exe
+*.dll
+*.so
+*.dylib
 
 # Dependencies
-.dart_tool/
-.packages
+vendor/
+node_modules/
 
-# Logs and temp files
+# Logs
 *.log
-*.tmp
+**/logs
 
 # Environment
 .env
 .env.local
-*.env.*
+.env.*
+!.env.example
 
-# Editor/IDE
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
-# OS generated files
+# OS
 .DS_Store
 Thumbs.db
 ```

@@ -19,6 +19,20 @@ class FileListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    try {
+      return _buildTile(context);
+    } catch (e, stackTrace) {
+      print('[FileListTile ERROR] Build failed for ${file.name}: $e');
+      print('[FileListTile ERROR] Stack: $stackTrace');
+      return ListTile(
+        leading: const Icon(Icons.error_outline, color: Colors.red),
+        title: Text('Error loading: ${file.name}'),
+        subtitle: Text('$e'),
+      );
+    }
+  }
+
+  Widget _buildTile(BuildContext context) {
     final result = ListTile(
       leading: FileIcon(file: file, size: 40),
       title: Text(
