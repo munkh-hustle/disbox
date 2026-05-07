@@ -1,45 +1,28 @@
 ```
-# Flutter/Dart
-.dart_tool/
-.build/
-packages/
-*.iws
-*.lock
-*.tmp
-*.log
-*.swo
-*.swp
+# Build artifacts
+/build/
+/ios/.symlinks
+/android/.gradle
+/android/build
+/android/app/build
+/pubspec.lock
 
 # Environment
 .env
 .env.local
-*.env.*
+.env.*
+!.env.example
 
-# Dependencies
-node_modules/
-vendor/
-
-# Logs
-*.log
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# IDE
+# IDE files
 .vscode/
 .idea/
 *.iml
 *.ipr
 *.iws
-out/
+*.swp
+*.swo
 
-# Build outputs
-build/
-dist/
-target/
-
-# Temporary files
-*.tmp
-*.temp
+# OS generated files
+.DS_Store
+Thumbs.db
 ```

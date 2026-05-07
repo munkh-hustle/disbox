@@ -317,6 +317,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       builder: (context) => progressDialog,
     );
 
+    String? tempPath;
     try {
       // Request storage permission for Android 12 and below
       if (Platform.isAndroid) {
@@ -341,9 +342,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         }
       }
 
-      // Download to temporary file first
+      // Download to temporary file in cache directory
       final tempDir = await getTemporaryDirectory();
-      final tempPath = '${tempDir.path}/${file.name}';
+      // Use unique filename to avoid conflicts
+      tempPath = '${tempDir.path}/disbox_temp_${file.id}_${file.name}';
+      
+      print('[FileCopy] Downloading to temp: $tempPath');
       
       await _disboxService.downloadFile(
         file,
@@ -355,10 +359,22 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
       if (mounted) Navigator.pop(context); // Close progress dialog
       
-      // Read the downloaded file
-      final fileData = await File(tempPath).readAsBytes();
+      // Verify downloaded file has content
+      final tempFile = File(tempPath);
+      if (!await tempFile.exists()) {
+        throw Exception('Download failed: temp file not created');
+      }
+      final fileSize = await tempFile.length();
+      if (fileSize == 0) {
+        throw Exception('Download failed: file is empty (0 bytes)');
+      }
       
-      print('[FileCopy] Saving file: ${file.name} (${fileData.length} bytes)');
+      print('[FileCopy] Downloaded file size: $fileSize bytes');
+      
+      // Read the downloaded file
+      final fileData = await tempFile.readAsBytes();
+      
+      print('[FileCopy] Saving file: ${file.name} ($fileSize bytes)');
       
       // Save to public Documents folder
       String? savedPath;
@@ -413,6 +429,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         
         print('[FileCopy] File saved to: $savedPath');
         
+        // Verify the saved file
+        final savedSize = await savedFile.length();
+        if (savedSize != fileSize) {
+          print('[FileCopy WARNING] Saved file size ($savedSize) differs from original ($fileSize)');
+        }
+        
         // Notify media scanner about the new file (for Android)
         if (Platform.isAndroid) {
           // This helps the file appear in gallery/file manager apps
@@ -422,13 +444,19 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       } catch (e) {
         print('[FileCopy ERROR] Failed to save file: $e');
         rethrow;
-      }
-      
-      // Clean up temporary file
-      try {
-        await File(tempPath).delete();
-      } catch (e) {
-        print('Warning: Could not delete temp file: $e');
+      } finally {
+        // ALWAYS clean up temporary file, even if save fails
+        if (tempPath != null) {
+          try {
+            final tempFile = File(tempPath);
+            if (await tempFile.exists()) {
+              await tempFile.delete();
+              print('[FileCopy] Cleaned up temp file: $tempPath');
+            }
+          } catch (e) {
+            print('[FileCopy WARNING] Could not delete temp file: $e');
+          }
+        }
       }
       
       // Show success message
@@ -445,6 +473,19 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       }
     } catch (e) {
       if (mounted) Navigator.pop(context); // Close progress dialog
+      
+      // Ensure temp file is cleaned up on error too
+      if (tempPath != null) {
+        try {
+          final tempFile = File(tempPath);
+          if (await tempFile.exists()) {
+            await tempFile.delete();
+            print('[FileCopy] Cleaned up temp file on error: $tempPath');
+          }
+        } catch (cleanupError) {
+          print('[FileCopy WARNING] Could not delete temp file on error: $cleanupError');
+        }
+      }
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Download failed: $e')),
