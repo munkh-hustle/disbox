@@ -1,28 +1,30 @@
 ```
-# Flutter/Dart
+# Flutter/Dart specific
 .dart_tool/
-.build/
 .packages
-flutter/ephemeral/
-*.iws
-*.sw?
-**/lib/**
-**/test/**
+.pub-cache/
+pubspec.lock
 
-# IDE
-.idea/
+# Build outputs
+build/
+bin/
+
+# IDE files
 .vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
 
-# Environment
-.env
-.env.local
-*.env.*
+# OS generated files
+.DS_Store
+Thumbs.db
 
 # Logs
 *.log
-**/logs
 
-# OS
-.DS_Store
-Thumbs.db
+# Environment variables
+.env
+.env.local
+*.env.*
 ```

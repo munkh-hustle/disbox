@@ -975,7 +975,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       return;
     }
 
-    if (textToImport == null || textToImport!.isEmpty) {
+    if (textToImport == null || textToImport.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No metadata text provided')),
       );
