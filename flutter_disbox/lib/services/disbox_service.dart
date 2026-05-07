@@ -283,6 +283,7 @@ class DisboxService extends ChangeNotifier {
   Future<DisboxFile?> importMetadataFromText(String metadataText) async {
     try {
       print('[DisboxService] Importing metadata from text...');
+      final stopwatch = Stopwatch()..start();
 
       // Extract JSON from the message (remove [DISBOX] prefix if present)
       String jsonStr = metadataText.trim();
@@ -290,6 +291,8 @@ class DisboxService extends ChangeNotifier {
       if (jsonStr.startsWith(prefix)) {
         jsonStr = jsonStr.substring(prefix.length).trim();
       }
+
+      print('[DisboxService] Parsing JSON... (${stopwatch.elapsedMilliseconds}ms)');
 
       // Parse the metadata JSON
       final metadata = jsonDecode(jsonStr) as Map<String, dynamic>;
@@ -299,6 +302,8 @@ class DisboxService extends ChangeNotifier {
       if (type != 'disbox_metadata') {
         throw Exception("Not a valid Disbox metadata message (type: $type)");
       }
+
+      print('[DisboxService] Creating DisboxFile... (${stopwatch.elapsedMilliseconds}ms)');
 
       // Create DisboxFile from the metadata
       // Note: Discord message metadata doesn't have a unique file ID in the same way,
@@ -320,12 +325,13 @@ class DisboxService extends ChangeNotifier {
             : DateTime.parse(metadata['createdAt'] as String),
       );
 
-      print('[DisboxService] Parsed metadata: ${disboxFile.name} (${disboxFile.path})');
+      print('[DisboxService] Parsed metadata: ${disboxFile.name} (${disboxFile.path}) (${stopwatch.elapsedMilliseconds}ms)');
 
       // Ensure Hive is initialized
       if (_fileTreeBox == null) {
         print('[DisboxService] Initializing Hive...');
         await _initHive();
+        print('[DisboxService] Hive initialized (${stopwatch.elapsedMilliseconds}ms)');
       }
 
       // Load existing webhook URL from SharedPreferences if not already set
@@ -339,7 +345,7 @@ class DisboxService extends ChangeNotifier {
         if (savedWebhookUrl != null && savedAccountId != null) {
           _webhookUrl = savedWebhookUrl;
           _accountId = savedAccountId;
-          print('[DisboxService] Loaded webhook URL from SharedPreferences, accountId: $_accountId');
+          print('[DisboxService] Loaded webhook URL from SharedPreferences, accountId: $_accountId (${stopwatch.elapsedMilliseconds}ms)');
         } else {
           print('[DisboxService WARNING] No webhook URL found in SharedPreferences. Creating temporary account ID.');
           // Generate a temporary account ID based on the file path for this import session
@@ -348,12 +354,16 @@ class DisboxService extends ChangeNotifier {
       }
 
       // Load existing file tree or create new one
+      print('[DisboxService] Loading file tree...');
       await _loadFileTree();
+      print('[DisboxService] File tree loaded, _fileTree is null: ${_fileTree == null} (${stopwatch.elapsedMilliseconds}ms)');
 
       // Add the file to the tree (this will merge/update without deleting existing data)
       // _fileTree should now be initialized by _loadFileTree() even if webhook was not configured
       if (_fileTree != null) {
+        print('[DisboxService] Adding file to tree...');
         _addFileToTree(_fileTree!, disboxFile);
+        print('[DisboxService] File added to tree (${stopwatch.elapsedMilliseconds}ms)');
       } else {
         // This should not happen, but handle it gracefully
         print('[DisboxService ERROR] _fileTree is still null after _loadFileTree()');
@@ -361,13 +371,16 @@ class DisboxService extends ChangeNotifier {
       }
 
       // Save updated tree to local storage
+      print('[DisboxService] Saving file tree...');
       await _saveFileTree();
+      print('[DisboxService] File tree saved (${stopwatch.elapsedMilliseconds}ms)');
 
-      print('[DisboxService] Successfully imported metadata for: ${disboxFile.name}');
+      print('[DisboxService] Successfully imported metadata for: ${disboxFile.name} (total: ${stopwatch.elapsedMilliseconds}ms)');
       notifyListeners();
       return disboxFile;
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('[DisboxService ERROR] Failed to import metadata from text: $e');
+      print('[DisboxService ERROR] Stack trace: $stackTrace');
       return null;
     }
   }
@@ -476,6 +489,7 @@ class DisboxService extends ChangeNotifier {
   /// This loads the existing file metadata that was previously stored
   /// locally. The file tree is stored in Hive indexed by the account ID.
   Future<void> _loadFileTree() async {
+    print('[DisboxService DEBUG] _loadFileTree called');
     if (_fileTreeBox == null) {
       print(
           '[DisboxService] Cannot load file tree: Hive not initialized');
@@ -494,6 +508,7 @@ class DisboxService extends ChangeNotifier {
         'created_at': DateTime.now().toIso8601String(),
         'updated_at': DateTime.now().toIso8601String(),
       };
+      print('[DisboxService DEBUG] Initialized empty file tree (no webhook)');
       return;
     }
 
@@ -502,10 +517,12 @@ class DisboxService extends ChangeNotifier {
 
     // Try to load file tree from Hive using account ID as key
     final storedData = _fileTreeBox!.get(_accountId);
+    print('[DisboxService DEBUG] Stored data from Hive: ${storedData != null ? "found (${(storedData as String).length} chars)" : "null"}');
 
     if (storedData != null) {
       // Decode from JSON string - now always a List format
       final decoded = jsonDecode(storedData as String);
+      print('[DisboxService DEBUG] Decoded data type: ${decoded.runtimeType}');
 
       // Now we always store as List, so just build tree from it
       if (decoded is List) {
@@ -569,6 +586,8 @@ class DisboxService extends ChangeNotifier {
       };
       print('[DisboxService] Initialized new empty file tree');
     }
+    
+    print('[DisboxService DEBUG] _loadFileTree completed, _fileTree is null: ${_fileTree == null}');
   }
 
   /// Save file tree to local Hive storage.
@@ -577,6 +596,7 @@ class DisboxService extends ChangeNotifier {
   /// Always saves in List format (flat list of DisboxFile) for consistency
   /// with export functionality.
   Future<void> _saveFileTree() async {
+    print('[DisboxService DEBUG] _saveFileTree called');
     if (_fileTreeBox == null || _fileTree == null) {
       print(
           '[DisboxService] Cannot save file tree: Hive or fileTree not initialized');
@@ -592,14 +612,18 @@ class DisboxService extends ChangeNotifier {
     try {
       // Convert tree to flat list of DisboxFile, then save as JSON
       final fileList = <DisboxFile>[];
+      print('[DisboxService DEBUG] Flattening file tree...');
       _flattenFileTreeToList(_fileTree!, '/', fileList);
+      print('[DisboxService DEBUG] Flattened to ${fileList.length} files');
       
       // Encode list to JSON string and save to Hive
       final jsonData = jsonEncode(fileList.map((f) => f.toJson()).toList());
+      print('[DisboxService DEBUG] Saving to Hive with key: $_accountId (${jsonData.length} chars)');
       await _fileTreeBox!.put(_accountId, jsonData);
       print('[DisboxService] File tree saved to local storage (${fileList.length} files)');
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('[DisboxService ERROR] Failed to save file tree: $e');
+      print('[DisboxService ERROR] Stack trace: $stackTrace');
     }
   }
 
@@ -778,24 +802,29 @@ class DisboxService extends ChangeNotifier {
 
   /// Add a DisboxFile to the tree structure at its path
   void _addFileToTree(Map<String, dynamic> root, DisboxFile file) {
+    print('[DisboxService DEBUG] _addFileToTree called for: ${file.path}');
     final path = file.path;
 
     if (path == '/') {
       // Root node
+      print('[DisboxService DEBUG] Adding root node');
       root['name'] = file.name;
       return;
     }
 
     final parts = path.split('/').where((p) => p.isNotEmpty).toList();
+    print('[DisboxService DEBUG] Path parts: $parts');
     var current = root;
 
     // Navigate to parent directory
     for (int i = 0; i < parts.length - 1; i++) {
       final part = parts[i];
       final children = current['children'] as Map<String, dynamic>;
+      print('[DisboxService DEBUG] Navigating to part: $part, children keys: ${children.keys.toList()}');
 
       if (!children.containsKey(part)) {
         // Create missing parent directory
+        print('[DisboxService DEBUG] Creating missing directory: $part');
         children[part] = {
           'id': part,
           'name': part,
@@ -812,6 +841,7 @@ class DisboxService extends ChangeNotifier {
     // Add the file/folder to its parent
     final fileName = parts.last;
     final children = current['children'] as Map<String, dynamic>;
+    print('[DisboxService DEBUG] Adding file: $fileName to parent with ${children.length} existing children');
 
     children[fileName] = {
       'id': file.id,
@@ -824,6 +854,8 @@ class DisboxService extends ChangeNotifier {
       'updated_at': file.modifiedAt.toIso8601String(),
       if (file.isFolder) 'children': <String, dynamic>{},
     };
+    
+    print('[DisboxService DEBUG] File added successfully. New children count: ${children.length}');
   }
 
   // ==================== FILE OPERATIONS ====================
@@ -1121,6 +1153,9 @@ class DisboxService extends ChangeNotifier {
   ///
   /// [folderPath] - The virtual folder path to list (default: root "/")
   Future<List<DisboxFile>> listFiles({String folderPath = '/'}) async {
+    print('[DisboxService DEBUG] listFiles called with folderPath: $folderPath');
+    print('[DisboxService DEBUG] isConfigured: $isConfigured, _webhookUrl: $_webhookUrl, _accountId: $_accountId, _fileTree null: ${_fileTree == null}');
+    
     if (!isConfigured) {
       print(
           '[DisboxService ERROR] listFiles called but webhook not configured');
@@ -1141,11 +1176,13 @@ class DisboxService extends ChangeNotifier {
     final files = <DisboxFile>[];
 
     // Navigate to the correct folder in the file tree
+    print('[DisboxService DEBUG] Getting folder from tree for path: $folderPath');
     final targetFolder = _getFolderFromTree(folderPath);
     if (targetFolder == null) {
       print('Folder not found: $folderPath');
       return [];
     }
+    print('[DisboxService DEBUG] Found target folder: ${targetFolder['name']}');
 
     // Extract children from the file tree
     final childrenData = targetFolder['children'];
@@ -1269,14 +1306,20 @@ class DisboxService extends ChangeNotifier {
   ///
   /// Returns null if the folder doesn't exist.
   Map<String, dynamic>? _getFolderFromTree(String path) {
-    if (_fileTree == null) return null;
+    print('[DisboxService DEBUG] _getFolderFromTree called with path: $path');
+    if (_fileTree == null) {
+      print('[DisboxService DEBUG] _fileTree is null, returning null');
+      return null;
+    }
 
     if (path == '/') {
+      print('[DisboxService DEBUG] Returning root folder');
       return _fileTree;
     }
 
     var currentNode = _fileTree;
     final parts = path.split('/').where((p) => p.isNotEmpty).toList();
+    print('[DisboxService DEBUG] Path parts: $parts');
 
     for (final part in parts) {
       final childrenData = currentNode?['children'];
@@ -1287,8 +1330,10 @@ class DisboxService extends ChangeNotifier {
           children[entry.key.toString()] = entry.value;
         }
       }
+      print('[DisboxService DEBUG] Looking for part: $part, children keys: ${children?.keys.toList()}');
 
       if (children == null || !children.containsKey(part)) {
+        print('[DisboxService DEBUG] Part not found: $part');
         return null;
       }
 
@@ -1305,10 +1350,12 @@ class DisboxService extends ChangeNotifier {
 
       // Verify it's a directory
       if (currentNode?['type'] != 'directory') {
+        print('[DisboxService DEBUG] Node is not a directory: ${currentNode?['type']}');
         return null;
       }
     }
 
+    print('[DisboxService DEBUG] Found folder: ${currentNode?['name']}');
     return currentNode;
   }
 
