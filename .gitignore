@@ -4,27 +4,25 @@
 .packages
 .pub-cache/
 pubspec.lock
-
-# Build outputs
 build/
-bin/
+*.g.dart
+*.freezed.dart
 
-# IDE files
+# IDE
 .vscode/
 .idea/
-*.iml
-*.ipr
-*.iws
-
-# OS generated files
-.DS_Store
-Thumbs.db
+*.swp
+*.swo
 
 # Logs
 *.log
+*.tmp
 
-# Environment variables
+# Environment
 .env
 .env.local
 *.env.*
+
+# Dependencies
+node_modules/
 ```

@@ -975,7 +975,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       return;
     }
 
-    if (textToImport == null || textToImport.isEmpty) {
+    if (textToImport == null || textToImport!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No metadata text provided')),
       );
@@ -984,7 +984,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
     try {
       // Split by newlines and filter valid metadata lines
-      final lines = textToImport.split('\n')
+      final lines = textToImport!.split('\n')
           .where((line) => line.trim().isNotEmpty && line.trim().startsWith('[DISBOX]'))
           .toList();
       
@@ -995,7 +995,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           SnackBar(content: Text('Successfully imported $importedCount file(s)!')),
         );
       } else {
-        final result = await _disboxService.importMetadataFromText(textToImport);
+        final result = await _disboxService.importMetadataFromText(textToImport!);
         if (result != null) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Successfully imported: ${result.name}')),
