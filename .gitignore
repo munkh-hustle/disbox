@@ -2,22 +2,22 @@
 # Flutter/Dart
 .dart_tool/
 .build/
-packages/
-*.iws
-*.swp
-*~
-.vscode/
-.idea/
+.packages
+*.g.dart
+*.freezed.dart
 
 # Dependencies
-pubspec.lock
+.pub/
+vendor/
 
-# Generated code
-lib/generated/
-android/.gradle/
-ios/Pods/
-ios/.symlinks/
-macos/Pods/
-macos/.symlinks/
-windows/Flutter/ephemeral/
+# Logs
+*.log
+
+# Environment variables
+.env
+.env.local
+
+# OS generated files
+.DS_Store
+Thumbs.db
 ```

@@ -36,6 +36,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   String? _error;
   bool _isInitialized = false;
   bool _isPickingFile = false; // Prevent multiple file picker invocations
+  int _buildCount = 0; // Track build count to detect infinite loops
 
   @override
   void initState() {
@@ -303,6 +304,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   /// Download a file to Documents folder using file_saver package
   Future<void> _downloadFile(DisboxFile file) async {
+    print('[DEBUG] _downloadFile called for: ${file.name}, size=${file.size}');
+    final stopwatch = Stopwatch()..start();
+    
     // Show progress dialog with stream
     final progressDialog = ProgressDialog(
       title: 'Downloading ${file.name}',
@@ -321,6 +325,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     try {
       // Request storage permission for Android 12 and below
       if (Platform.isAndroid) {
+        print('[DEBUG] Requesting storage permissions...');
         final androidInfo = await DeviceInfoPlugin().androidInfo;
         if (androidInfo.version.sdkInt <= 28) {
           var status = await Permission.storage.status;
@@ -340,6 +345,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
             }
           }
         }
+        print('[DEBUG] Permissions granted');
       }
 
       // Download to temporary file in cache directory
@@ -353,6 +359,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       tempPath = '${disboxTempDir.path}/${file.id}_${file.name}';
       
       print('[FileCopy] Downloading to temp: $tempPath');
+      print('[DEBUG] Starting downloadFile service call... (${stopwatch.elapsedMilliseconds}ms)');
       
       await _disboxService.downloadFile(
         file,
@@ -361,6 +368,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           // Progress is already being sent via the stream
         },
       );
+      
+      print('[DEBUG] downloadFile completed (${stopwatch.elapsedMilliseconds}ms)');
 
       if (mounted) Navigator.pop(context); // Close progress dialog
       
@@ -508,6 +517,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   /// Delete a file or folder
   Future<void> _deleteFile(DisboxFile file) async {
+    print('[DEBUG] _deleteFile called for: ${file.name}, isFolder=${file.isFolder}');
+    
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -527,10 +538,17 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       ),
     );
 
-    if (confirmed != true) return;
+    if (confirmed != true) {
+      print('[DEBUG] Delete cancelled');
+      return;
+    }
+    
+    print('[DEBUG] Delete confirmed, calling service...');
 
     try {
       await _disboxService.deleteFile(file);
+      
+      print('[DEBUG] Delete completed successfully');
       
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Deleted successfully')),
@@ -538,6 +556,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       
       _loadFiles(); // Refresh file list
     } catch (e) {
+      print('[DEBUG ERROR] Delete failed: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Delete failed: $e')),
       );
@@ -546,6 +565,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   /// Show file/folder options menu
   void _showOptions(DisboxFile file) {
+    print('[DEBUG] _showOptions called for: ${file.name}, isFolder=${file.isFolder}');
     showModalBottomSheet(
       context: context,
       builder: (context) => SafeArea(
@@ -556,6 +576,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               leading: const Icon(Icons.info_outline),
               title: const Text('Details'),
               onTap: () {
+                print('[DEBUG] Details tapped');
                 Navigator.pop(context);
                 _showDetails(file);
               },
@@ -565,6 +586,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                 leading: const Icon(Icons.download),
                 title: const Text('Download'),
                 onTap: () {
+                  print('[DEBUG] Download tapped');
                   Navigator.pop(context);
                   _downloadFile(file);
                 },
@@ -573,6 +595,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               leading: const Icon(Icons.edit),
               title: const Text('Rename'),
               onTap: () {
+                print('[DEBUG] Rename tapped');
                 Navigator.pop(context);
                 _renameFile(file);
               },
@@ -581,6 +604,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               leading: const Icon(Icons.share),
               title: const Text('Share'),
               onTap: () {
+                print('[DEBUG] Share tapped');
                 Navigator.pop(context);
                 _shareMetadata(file);
               },
@@ -589,6 +613,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               leading: const Icon(Icons.delete, color: Colors.red),
               title: const Text('Delete', style: TextStyle(color: Colors.red)),
               onTap: () {
+                print('[DEBUG] Delete tapped');
                 Navigator.pop(context);
                 _deleteFile(file);
               },
@@ -893,6 +918,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   /// Show dialog to paste Discord metadata text for import
   Future<void> _importMetadataFromTextDialog() async {
     final controller = TextEditingController();
+    String? textToImport;
     
     final confirmed = await showDialog<bool>(
       context: context,
@@ -900,47 +926,58 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         title: const Text('Import Discord Metadata'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
               'Paste metadata text from Discord messages below.\nYou can paste multiple lines at once.',
               style: TextStyle(fontSize: 14),
             ),
             const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              maxLines: 8,
-              minLines: 4,
-              decoration: const InputDecoration(
-                hintText: '[DISBOX] {"type":"disbox_metadata",...}',
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.all(12),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 200),
+              child: TextField(
+                controller: controller,
+                maxLines: 8,
+                minLines: 4,
+                decoration: const InputDecoration(
+                  hintText: '[DISBOX] {"type":"disbox_metadata",...}',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.all(12),
+                ),
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
               ),
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
             ),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () {
+              textToImport = controller.text.trim();
+              Navigator.pop(context, false);
+            },
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () {
+              textToImport = controller.text.trim();
+              Navigator.pop(context, true);
+            },
             child: const Text('Import'),
           ),
         ],
       ),
     );
 
-    if (confirmed != true) {
+    // Dispose controller after dialog animation completes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       controller.dispose();
+    });
+
+    if (confirmed != true) {
       return;
     }
 
-    final text = controller.text.trim();
-    controller.dispose();
-
-    if (text.isEmpty) {
+    if (textToImport == null || textToImport!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No metadata text provided')),
       );
@@ -949,7 +986,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
     try {
       // Split by newlines and filter valid metadata lines
-      final lines = text.split('\n')
+      final lines = textToImport!.split('\n')
           .where((line) => line.trim().isNotEmpty && line.trim().startsWith('[DISBOX]'))
           .toList();
       
@@ -960,7 +997,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           SnackBar(content: Text('Successfully imported $importedCount file(s)!')),
         );
       } else {
-        final result = await _disboxService.importMetadataFromText(text);
+        final result = await _disboxService.importMetadataFromText(textToImport!);
         if (result != null) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Successfully imported: ${result.name}')),
@@ -1117,6 +1154,40 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   @override
   Widget build(BuildContext context) {
+    try {
+      return _buildBody();
+    } catch (e, stackTrace) {
+      print('[ERROR] Build failed: $e');
+      print('[ERROR] Stack: $stackTrace');
+      return Scaffold(
+        appBar: AppBar(title: const Text('Error')),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text('Build error: $e'),
+              const SizedBox(height: 8),
+              ElevatedButton(
+                onPressed: () => _loadFiles(),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildBody() {
+    // Track build count to detect infinite loops
+    _buildCount++;
+    if (_buildCount > 50) {
+      print('[BUILD ERROR] Possible infinite rebuild loop detected! Stopping.');
+      _buildCount = 0; // Reset to prevent continuous logging
+    }
+    
     return Scaffold(
       appBar: AppBar(
         title: Text(_currentPath == '/' ? 'Disbox' : _currentPath),
@@ -1124,6 +1195,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           IconButton(
             icon: const Icon(Icons.import_export),
             onPressed: () {
+              print('[BUILD] Import/Export button pressed');
               showModalBottomSheet(
                 context: context,
                 builder: (context) => SafeArea(
@@ -1135,6 +1207,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                         title: const Text('Export Configuration'),
                         subtitle: const Text('Share webhook URL to another device'),
                         onTap: () {
+                          print('[BUILD] Export tapped');
                           Navigator.pop(context);
                           _exportMetadata();
                         },
@@ -1144,6 +1217,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                         title: const Text('Import Configuration'),
                         subtitle: const Text('Load config from shared file'),
                         onTap: () {
+                          print('[BUILD] Import tapped');
                           Navigator.pop(context);
                           _importMetadata();
                         },
@@ -1153,6 +1227,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                         title: const Text('Clear Cache & Data'),
                         subtitle: const Text('Free up storage space'),
                         onTap: () {
+                          print('[BUILD] Clear cache tapped');
                           Navigator.pop(context);
                           _clearCacheAndData();
                         },
@@ -1239,26 +1314,73 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                         : ListView.builder(
                             itemCount: _files.length,
                             itemBuilder: (context, index) {
-                              final file = _files[index];
-                              return FileListTile(
-                                file: file,
-                                onTap: () {
-                                  if (file.isFolder) {
-                                    _navigateToFolder(file.path);
-                                  } else {
-                                    _showOptions(file);
-                                  }
-                                },
-                                onLongPress: () => _showOptions(file),
-                              );
+                              try {
+                                final file = _files[index];
+                                return FileListTile(
+                                  file: file,
+                                  onTap: () {
+                                    if (file.isFolder) {
+                                      _navigateToFolder(file.path);
+                                    } else {
+                                      _showOptions(file);
+                                    }
+                                  },
+                                  onLongPress: () => _showOptions(file),
+                                );
+                              } catch (e, stackTrace) {
+                                print('[ERROR] Building tile $index: $e');
+                                print('[ERROR] Stack: $stackTrace');
+                                return ListTile(
+                                  title: Text('Error loading file $index'),
+                                  subtitle: Text('$e'),
+                                );
+                              }
                             },
                           ),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _uploadFile,
+        onPressed: () {
+          print('[BUILD] FAB pressed');
+          _showUploadMenu();
+        },
         child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  /// Show upload menu with file/folder options
+  void _showUploadMenu() {
+    print('[DEBUG] _showUploadMenu called');
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.upload_file, color: Colors.blue),
+              title: const Text('Upload File'),
+              subtitle: const Text('Select a file from your device'),
+              onTap: () {
+                print('[DEBUG] Upload File tapped');
+                Navigator.pop(context);
+                _uploadFile();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.create_new_folder, color: Colors.green),
+              title: const Text('New Folder'),
+              subtitle: const Text('Create a new folder'),
+              onTap: () {
+                print('[DEBUG] New Folder tapped');
+                Navigator.pop(context);
+                _createFolder();
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

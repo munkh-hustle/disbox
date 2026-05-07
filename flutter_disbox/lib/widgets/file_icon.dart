@@ -15,11 +15,21 @@ class FileIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    try {
+      return _buildIcon(context);
+    } catch (e, stackTrace) {
+      print('[FileIcon ERROR] Build failed for ${file.name}: $e');
+      print('[FileIcon ERROR] Stack: $stackTrace');
+      return Icon(Icons.error_outline, size: size, color: Colors.red);
+    }
+  }
+
+  Widget _buildIcon(BuildContext context) {
     if (file.isFolder) {
       return Icon(Icons.folder, size: size, color: Colors.amber[700]);
+    } else {
+      return _getFileIcon(file.name, file.mimeType);
     }
-
-    return _getFileIcon(file.name, file.mimeType);
   }
 
   Widget _getFileIcon(String filename, String? mimeType) {
