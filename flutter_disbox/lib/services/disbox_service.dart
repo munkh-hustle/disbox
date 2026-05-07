@@ -449,8 +449,14 @@ class DisboxService extends ChangeNotifier {
       final result = <String, dynamic>{};
       for (final entry in data.entries) {
         final key = entry.key.toString();
-        final value = _convertMapToStringKeys(entry.value);
-        result[key] = value;
+        // Skip 'children' during conversion to avoid deep recursion issues
+        // Children will be converted on-demand when accessed
+        if (key == 'children') {
+          result[key] = entry.value;
+        } else {
+          final value = _convertMapToStringKeys(entry.value);
+          result[key] = value;
+        }
       }
       return result;
     } else if (data is List) {
@@ -1153,6 +1159,7 @@ class DisboxService extends ChangeNotifier {
   ///
   /// [folderPath] - The virtual folder path to list (default: root "/")
   Future<List<DisboxFile>> listFiles({String folderPath = '/'}) async {
+    final stopwatch = Stopwatch()..start();
     print('[DisboxService DEBUG] listFiles called with folderPath: $folderPath');
     print('[DisboxService DEBUG] isConfigured: $isConfigured, _webhookUrl: $_webhookUrl, _accountId: $_accountId, _fileTree null: ${_fileTree == null}');
     
@@ -1175,122 +1182,135 @@ class DisboxService extends ChangeNotifier {
 
     final files = <DisboxFile>[];
 
-    // Navigate to the correct folder in the file tree
-    print('[DisboxService DEBUG] Getting folder from tree for path: $folderPath');
-    final targetFolder = _getFolderFromTree(folderPath);
-    if (targetFolder == null) {
-      print('Folder not found: $folderPath');
-      return [];
-    }
-    print('[DisboxService DEBUG] Found target folder: ${targetFolder['name']}');
-
-    // Extract children from the file tree
-    final childrenData = targetFolder['children'];
-    Map<String, dynamic>? children;
-    if (childrenData is Map) {
-      children = <String, dynamic>{};
-      for (final entry in childrenData.entries) {
-        children[entry.key.toString()] =
-            _convertMapToStringKeys(entry.value) ?? entry.value;
+    try {
+      // Navigate to the correct folder in the file tree
+      print('[DisboxService DEBUG] Getting folder from tree for path: $folderPath');
+      final targetFolder = _getFolderFromTree(folderPath);
+      if (targetFolder == null) {
+        print('Folder not found: $folderPath');
+        return [];
       }
-    }
+      print('[DisboxService DEBUG] Found target folder: ${targetFolder['name']}');
 
-    if (children == null) {
-      return [];
-    }
-
-    // Convert file tree nodes to DisboxFile objects
-    children.forEach((name, node) {
-      try {
-        Map<String, dynamic>? childNode;
-        if (node is Map) {
-          childNode = <String, dynamic>{};
-          for (final entry in node.entries) {
-            childNode[entry.key.toString()] =
-                _convertMapToStringKeys(entry.value) ?? entry.value;
-          }
+      // Extract children from the file tree
+      final childrenData = targetFolder['children'];
+      Map<String, dynamic>? children;
+      if (childrenData is Map) {
+        children = <String, dynamic>{};
+        for (final entry in childrenData.entries) {
+          children[entry.key.toString()] =
+              _convertMapToStringKeys(entry.value) ?? entry.value;
         }
+      } else if (childrenData != null) {
+        // Handle case where children might be stored differently
+        print('[DisboxService DEBUG] Unexpected children type: ${childrenData.runtimeType}');
+      }
 
-        if (childNode == null) {
-          print('[DisboxService WARNING] Skipping invalid node: $name');
-          return;
-        }
+      if (children == null) {
+        return [];
+      }
 
-        final childPath = '$folderPath/$name';
-        final isFolder = childNode['type'] == 'directory';
-
-        // Parse chunk message IDs from content (for files)
-        // Handle both storage formats:
-        // - New format (from import): 'chunk_message_ids' as List
-        // - Old format (from upload): 'content' as JSON-encoded string
-        List<String> chunkMessageIds = [];
-        if (!isFolder) {
-          if (childNode.containsKey('chunk_message_ids')) {
-            // New format from import
-            final chunkIdsValue = childNode['chunk_message_ids'];
-            if (chunkIdsValue is List) {
-              chunkMessageIds =
-                  chunkIdsValue.map((id) => id.toString()).toList();
+      // Convert file tree nodes to DisboxFile objects
+      children.forEach((name, node) {
+        try {
+          print('[DisboxService DEBUG] Processing child: $name, type=${node.runtimeType}');
+          Map<String, dynamic>? childNode;
+          if (node is Map) {
+            childNode = <String, dynamic>{};
+            for (final entry in node.entries) {
+              final key = entry.key.toString();
+              // Skip converting 'children' recursively - only convert top-level properties
+              if (key == 'children') {
+                childNode[key] = entry.value;
+              } else {
+                childNode[key] = _convertMapToStringKeys(entry.value) ?? entry.value;
+              }
             }
-          } else if (childNode['content'] != null) {
-            // Old format from upload - content is JSON-encoded string
+          } else {
+            print('[DisboxService WARNING] Node is not a Map: ${node.runtimeType}');
+            return;
+          }
+
+          if (childNode == null) {
+            print('[DisboxService WARNING] Skipping invalid node: $name');
+            return;
+          }
+
+          final childPath = '$folderPath/$name';
+          final isFolder = childNode['type'] == 'directory';
+
+          // Parse chunk message IDs from content (for files)
+          // Handle both storage formats:
+          // - New format (from import): 'chunk_message_ids' as List
+          // - Old format (from upload): 'content' as JSON-encoded string
+          List<String> chunkMessageIds = [];
+          if (!isFolder) {
+            if (childNode.containsKey('chunk_message_ids')) {
+              // New format from import
+              final chunkIdsValue = childNode['chunk_message_ids'];
+              if (chunkIdsValue is List) {
+                chunkMessageIds =
+                    chunkIdsValue.map((id) => id.toString()).toList();
+              }
+            } else if (childNode['content'] != null) {
+              // Old format from upload - content is JSON-encoded string
+              try {
+                final contentList =
+                    jsonDecode(childNode['content'] as String) as List;
+                chunkMessageIds = contentList.map((id) => id.toString()).toList();
+              } catch (e) {
+                print('Warning: Failed to parse content for $name: $e');
+              }
+            }
+          }
+
+          // Get size - handle both int and num types
+          int? fileSize;
+          final sizeValue = childNode['size'];
+          if (sizeValue is int) {
+            fileSize = sizeValue;
+          } else if (sizeValue is num) {
+            fileSize = sizeValue.toInt();
+          } else if (sizeValue is String) {
+            fileSize = int.tryParse(sizeValue);
+          }
+
+          // Parse dates safely
+          DateTime? createdAt;
+          if (childNode['created_at'] != null) {
             try {
-              final contentList =
-                  jsonDecode(childNode['content'] as String) as List;
-              chunkMessageIds = contentList.map((id) => id.toString()).toList();
-            } catch (e) {
-              print('Warning: Failed to parse content for $name: $e');
+              createdAt = DateTime.parse(childNode['created_at'].toString());
+            } catch (_) {
+              createdAt = DateTime.now();
             }
           }
-        }
 
-        // Get size - handle both int and num types
-        int? fileSize;
-        final sizeValue = childNode['size'];
-        if (sizeValue is int) {
-          fileSize = sizeValue;
-        } else if (sizeValue is num) {
-          fileSize = sizeValue.toInt();
-        } else if (sizeValue is String) {
-          fileSize = int.tryParse(sizeValue);
-        }
-
-        // Parse dates safely
-        DateTime? createdAt;
-        if (childNode['created_at'] != null) {
-          try {
-            createdAt = DateTime.parse(childNode['created_at'].toString());
-          } catch (_) {
-            createdAt = DateTime.now();
+          DateTime? modifiedAt;
+          if (childNode['updated_at'] != null) {
+            try {
+              modifiedAt = DateTime.parse(childNode['updated_at'].toString());
+            } catch (_) {
+              modifiedAt = DateTime.now();
+            }
           }
+
+          final file = DisboxFile(
+            id: childNode['id'].toString(),
+            name: name,
+            path: childPath,
+            isFolder: isFolder,
+            size: fileSize,
+            mimeType: !isFolder ? _detectMimeType(name) : null,
+            chunkMessageIds: chunkMessageIds,
+            createdAt: createdAt ?? DateTime.now(),
+            modifiedAt: modifiedAt ?? DateTime.now(),
+          );
+
+          files.add(file);
+        } catch (e) {
+          print('Warning: Failed to convert node $name: $e');
         }
-
-        DateTime? modifiedAt;
-        if (childNode['updated_at'] != null) {
-          try {
-            modifiedAt = DateTime.parse(childNode['updated_at'].toString());
-          } catch (_) {
-            modifiedAt = DateTime.now();
-          }
-        }
-
-        final file = DisboxFile(
-          id: childNode['id'].toString(),
-          name: name,
-          path: childPath,
-          isFolder: isFolder,
-          size: fileSize,
-          mimeType: !isFolder ? _detectMimeType(name) : null,
-          chunkMessageIds: chunkMessageIds,
-          createdAt: createdAt ?? DateTime.now(),
-          modifiedAt: modifiedAt ?? DateTime.now(),
-        );
-
-        files.add(file);
-      } catch (e) {
-        print('Warning: Failed to convert node $name: $e');
-      }
-    });
+      });
 
     // Sort: folders first, then files, alphabetically
     files.sort((a, b) {
@@ -1299,8 +1319,14 @@ class DisboxService extends ChangeNotifier {
       return a.name.compareTo(b.name);
     });
 
+    print('[DisboxService] listFiles completed in ${stopwatch.elapsedMilliseconds}ms with ${files.length} files');
     return files;
+  } catch (e, stackTrace) {
+    print('[DisboxService ERROR] listFiles failed: $e');
+    print('[DisboxService ERROR] Stack trace: $stackTrace');
+    rethrow;
   }
+}
 
   /// Get a folder node from the file tree by path.
   ///
@@ -1329,6 +1355,8 @@ class DisboxService extends ChangeNotifier {
         for (final entry in childrenData.entries) {
           children[entry.key.toString()] = entry.value;
         }
+      } else if (childrenData != null) {
+        print('[DisboxService DEBUG] Unexpected children type: ${childrenData.runtimeType}');
       }
       print('[DisboxService DEBUG] Looking for part: $part, children keys: ${children?.keys.toList()}');
 
@@ -1344,6 +1372,8 @@ class DisboxService extends ChangeNotifier {
         for (final entry in nodeData.entries) {
           nextNode[entry.key.toString()] = entry.value;
         }
+      } else if (nodeData != null) {
+        print('[DisboxService DEBUG] Unexpected node data type: ${nodeData.runtimeType}');
       }
 
       currentNode = nextNode;
