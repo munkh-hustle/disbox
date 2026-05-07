@@ -328,11 +328,37 @@ class DisboxService extends ChangeNotifier {
         await _initHive();
       }
 
+      // Load existing webhook URL from SharedPreferences if not already set
+      // This is needed for importMetadataFromText to work without calling setWebhookUrl first
+      if (_webhookUrl == null) {
+        print('[DisboxService] Webhook URL not set, loading from SharedPreferences...');
+        final prefs = await SharedPreferences.getInstance();
+        final savedWebhookUrl = prefs.getString('webhook_url');
+        final savedAccountId = prefs.getString('account_id');
+        
+        if (savedWebhookUrl != null && savedAccountId != null) {
+          _webhookUrl = savedWebhookUrl;
+          _accountId = savedAccountId;
+          print('[DisboxService] Loaded webhook URL from SharedPreferences, accountId: $_accountId');
+        } else {
+          print('[DisboxService WARNING] No webhook URL found in SharedPreferences. Creating temporary account ID.');
+          // Generate a temporary account ID based on the file path for this import session
+          _accountId = _hashWebhookUrl(metadata['path'] as String);
+        }
+      }
+
       // Load existing file tree or create new one
       await _loadFileTree();
 
       // Add the file to the tree (this will merge/update without deleting existing data)
-      _addFileToTree(_fileTree!, disboxFile);
+      // _fileTree should now be initialized by _loadFileTree() even if webhook was not configured
+      if (_fileTree != null) {
+        _addFileToTree(_fileTree!, disboxFile);
+      } else {
+        // This should not happen, but handle it gracefully
+        print('[DisboxService ERROR] _fileTree is still null after _loadFileTree()');
+        return null;
+      }
 
       // Save updated tree to local storage
       await _saveFileTree();
@@ -450,9 +476,24 @@ class DisboxService extends ChangeNotifier {
   /// This loads the existing file metadata that was previously stored
   /// locally. The file tree is stored in Hive indexed by the account ID.
   Future<void> _loadFileTree() async {
-    if (_webhookUrl == null || _fileTreeBox == null) {
+    if (_fileTreeBox == null) {
       print(
-          '[DisboxService] Cannot load file tree: webhook or Hive not initialized');
+          '[DisboxService] Cannot load file tree: Hive not initialized');
+      return;
+    }
+
+    // If webhook URL is not set, we can't load account-specific data
+    // but we should still initialize an empty file tree to avoid null errors
+    if (_webhookUrl == null && _accountId == null) {
+      print('[DisboxService] Webhook URL and Account ID not set, initializing empty file tree');
+      _fileTree = {
+        'id': 'root',
+        'name': 'root',
+        'type': 'directory',
+        'children': {},
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
       return;
     }
 
@@ -536,9 +577,15 @@ class DisboxService extends ChangeNotifier {
   /// Always saves in List format (flat list of DisboxFile) for consistency
   /// with export functionality.
   Future<void> _saveFileTree() async {
-    if (_webhookUrl == null || _fileTreeBox == null || _fileTree == null) {
+    if (_fileTreeBox == null || _fileTree == null) {
       print(
-          '[DisboxService] Cannot save file tree: webhook, Hive, or fileTree not initialized');
+          '[DisboxService] Cannot save file tree: Hive or fileTree not initialized');
+      return;
+    }
+
+    // If accountId is null, we can't save to the correct location
+    if (_accountId == null) {
+      print('[DisboxService WARNING] Account ID is null, cannot save file tree properly');
       return;
     }
 
