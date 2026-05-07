@@ -968,8 +968,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       ),
     );
 
-    // Dispose controller after dialog is closed
-    controller.dispose();
+    // Dispose controller after dialog animation completes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      controller.dispose();
+    });
 
     if (confirmed != true) {
       return;
