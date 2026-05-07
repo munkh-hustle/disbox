@@ -303,6 +303,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   /// Download a file to Documents folder using file_saver package
   Future<void> _downloadFile(DisboxFile file) async {
+    print('[DEBUG] _downloadFile called for: ${file.name}, size=${file.size}');
+    final stopwatch = Stopwatch()..start();
+    
     // Show progress dialog with stream
     final progressDialog = ProgressDialog(
       title: 'Downloading ${file.name}',
@@ -321,6 +324,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     try {
       // Request storage permission for Android 12 and below
       if (Platform.isAndroid) {
+        print('[DEBUG] Requesting storage permissions...');
         final androidInfo = await DeviceInfoPlugin().androidInfo;
         if (androidInfo.version.sdkInt <= 28) {
           var status = await Permission.storage.status;
@@ -340,6 +344,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
             }
           }
         }
+        print('[DEBUG] Permissions granted');
       }
 
       // Download to temporary file in cache directory
@@ -353,6 +358,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       tempPath = '${disboxTempDir.path}/${file.id}_${file.name}';
       
       print('[FileCopy] Downloading to temp: $tempPath');
+      print('[DEBUG] Starting downloadFile service call... (${stopwatch.elapsedMilliseconds}ms)');
       
       await _disboxService.downloadFile(
         file,
@@ -361,6 +367,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           // Progress is already being sent via the stream
         },
       );
+      
+      print('[DEBUG] downloadFile completed (${stopwatch.elapsedMilliseconds}ms)');
 
       if (mounted) Navigator.pop(context); // Close progress dialog
       
@@ -508,6 +516,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   /// Delete a file or folder
   Future<void> _deleteFile(DisboxFile file) async {
+    print('[DEBUG] _deleteFile called for: ${file.name}, isFolder=${file.isFolder}');
+    
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -527,10 +537,17 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       ),
     );
 
-    if (confirmed != true) return;
+    if (confirmed != true) {
+      print('[DEBUG] Delete cancelled');
+      return;
+    }
+    
+    print('[DEBUG] Delete confirmed, calling service...');
 
     try {
       await _disboxService.deleteFile(file);
+      
+      print('[DEBUG] Delete completed successfully');
       
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Deleted successfully')),
@@ -538,6 +555,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       
       _loadFiles(); // Refresh file list
     } catch (e) {
+      print('[DEBUG ERROR] Delete failed: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Delete failed: $e')),
       );
@@ -546,6 +564,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   /// Show file/folder options menu
   void _showOptions(DisboxFile file) {
+    print('[DEBUG] _showOptions called for: ${file.name}, isFolder=${file.isFolder}');
     showModalBottomSheet(
       context: context,
       builder: (context) => SafeArea(
@@ -556,6 +575,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               leading: const Icon(Icons.info_outline),
               title: const Text('Details'),
               onTap: () {
+                print('[DEBUG] Details tapped');
                 Navigator.pop(context);
                 _showDetails(file);
               },
@@ -565,6 +585,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                 leading: const Icon(Icons.download),
                 title: const Text('Download'),
                 onTap: () {
+                  print('[DEBUG] Download tapped');
                   Navigator.pop(context);
                   _downloadFile(file);
                 },
@@ -573,6 +594,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               leading: const Icon(Icons.edit),
               title: const Text('Rename'),
               onTap: () {
+                print('[DEBUG] Rename tapped');
                 Navigator.pop(context);
                 _renameFile(file);
               },
@@ -581,6 +603,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               leading: const Icon(Icons.share),
               title: const Text('Share'),
               onTap: () {
+                print('[DEBUG] Share tapped');
                 Navigator.pop(context);
                 _shareMetadata(file);
               },
@@ -589,6 +612,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               leading: const Icon(Icons.delete, color: Colors.red),
               title: const Text('Delete', style: TextStyle(color: Colors.red)),
               onTap: () {
+                print('[DEBUG] Delete tapped');
                 Navigator.pop(context);
                 _deleteFile(file);
               },
@@ -1117,6 +1141,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   @override
   Widget build(BuildContext context) {
+    print('[BUILD] FileBrowserScreen.build() called, _isLoading=$_isLoading, _files.length=${_files.length}');
+    final stopwatch = Stopwatch()..start();
+    
     return Scaffold(
       appBar: AppBar(
         title: Text(_currentPath == '/' ? 'Disbox' : _currentPath),
@@ -1124,6 +1151,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           IconButton(
             icon: const Icon(Icons.import_export),
             onPressed: () {
+              print('[BUILD] Import/Export button pressed');
               showModalBottomSheet(
                 context: context,
                 builder: (context) => SafeArea(
@@ -1135,6 +1163,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                         title: const Text('Export Configuration'),
                         subtitle: const Text('Share webhook URL to another device'),
                         onTap: () {
+                          print('[BUILD] Export tapped');
                           Navigator.pop(context);
                           _exportMetadata();
                         },
@@ -1144,6 +1173,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                         title: const Text('Import Configuration'),
                         subtitle: const Text('Load config from shared file'),
                         onTap: () {
+                          print('[BUILD] Import tapped');
                           Navigator.pop(context);
                           _importMetadata();
                         },
@@ -1153,6 +1183,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                         title: const Text('Clear Cache & Data'),
                         subtitle: const Text('Free up storage space'),
                         onTap: () {
+                          print('[BUILD] Clear cache tapped');
                           Navigator.pop(context);
                           _clearCacheAndData();
                         },
@@ -1240,9 +1271,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                             itemCount: _files.length,
                             itemBuilder: (context, index) {
                               final file = _files[index];
+                              print('[BUILD] Building tile for file $index: ${file.name}');
                               return FileListTile(
                                 file: file,
                                 onTap: () {
+                                  print('[BUILD] Tile tapped: ${file.name}, isFolder=${file.isFolder}');
                                   if (file.isFolder) {
                                     _navigateToFolder(file.path);
                                   } else {
