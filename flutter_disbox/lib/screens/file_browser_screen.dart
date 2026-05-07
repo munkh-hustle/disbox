@@ -743,6 +743,42 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   /// Import metadata from a shared config file
   Future<void> _importMetadata() async {
+    // Show dialog with options for different import methods
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Import Options'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.description, color: Colors.blue),
+              title: const Text('From JSON File'),
+              subtitle: const Text('Import config file from device'),
+              onTap: () => Navigator.pop(context, 'file'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.message, color: Colors.green),
+              title: const Text('From Discord Metadata'),
+              subtitle: const Text('Paste metadata text from Discord'),
+              onTap: () => Navigator.pop(context, 'metadata'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == null) return;
+
+    if (result == 'file') {
+      await _importMetadataFromFile();
+    } else if (result == 'metadata') {
+      await _importMetadataFromTextDialog();
+    }
+  }
+
+  /// Import configuration from a JSON file
+  Future<void> _importMetadataFromFile() async {
     try {
       // Pick the config file
       final result = await FilePicker.pickFiles(
@@ -841,6 +877,95 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       setState(() {
         _currentPath = '/';
       });
+      await _loadFiles();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Import failed: $e')),
+      );
+    }
+  }
+
+  /// Show dialog to paste Discord metadata text for import
+  Future<void> _importMetadataFromTextDialog() async {
+    final controller = TextEditingController();
+    
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Import Discord Metadata'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Paste metadata text from Discord messages below.\nYou can paste multiple lines at once.',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              maxLines: 8,
+              minLines: 4,
+              decoration: const InputDecoration(
+                hintText: '[DISBOX] {"type":"disbox_metadata",...}',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.all(12),
+              ),
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) {
+      controller.dispose();
+      return;
+    }
+
+    final text = controller.text.trim();
+    controller.dispose();
+
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No metadata text provided')),
+      );
+      return;
+    }
+
+    try {
+      // Split by newlines and filter valid metadata lines
+      final lines = text.split('\n')
+          .where((line) => line.trim().isNotEmpty && line.trim().startsWith('[DISBOX]'))
+          .toList();
+      
+      int importedCount = 0;
+      if (lines.length > 1) {
+        importedCount = await _disboxService.importMultipleMetadataFromText(lines);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Successfully imported $importedCount file(s)!')),
+        );
+      } else {
+        final result = await _disboxService.importMetadataFromText(text);
+        if (result != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Successfully imported: ${result.name}')),
+          );
+        } else {
+          throw Exception('Failed to import metadata');
+        }
+      }
+      
+      // Reload files to show newly imported ones
       await _loadFiles();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
