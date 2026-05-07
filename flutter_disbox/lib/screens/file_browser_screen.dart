@@ -344,8 +344,13 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
       // Download to temporary file in cache directory
       final tempDir = await getTemporaryDirectory();
+      // Create subdirectory for disbox downloads to avoid permission issues
+      final disboxTempDir = Directory('${tempDir.path}/disbox_downloads');
+      if (!await disboxTempDir.exists()) {
+        await disboxTempDir.create(recursive: true);
+      }
       // Use unique filename to avoid conflicts
-      tempPath = '${tempDir.path}/disbox_temp_${file.id}_${file.name}';
+      tempPath = '${disboxTempDir.path}/${file.id}_${file.name}';
       
       print('[FileCopy] Downloading to temp: $tempPath');
       

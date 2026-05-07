@@ -1,26 +1,30 @@
 ```
-# Flutter/Dart specific ignores
+# Flutter/Dart specific
 .dart_tool/
-.packages
-pubspec.lock
-build/
-*.g.dart
-*.freezed.dart
+.build/
+packages/
+*.iws
+*.log
+**/logs
 
-# IDE files
+# Dependencies
+node_modules/
+vendor/
+
+# Environment variables
+.env
+.env.local
+.env.*
+!.env.example
+
+# IDE specific
 .vscode/
 .idea/
 *.swp
 *.swo
+*.tmp
 
-# Logs
-*.log
-
-# Environment
-.env
-.env.local
-*.env.*
-
-# Dependencies
-node_modules/
+# OS generated files
+.DS_Store
+Thumbs.db
 ```

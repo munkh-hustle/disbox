@@ -110,6 +110,17 @@ class DisboxService extends ChangeNotifier {
       final tempDir = await getTemporaryDirectory();
       print('[DisboxService] Cleaning up temp files in: ${tempDir.path}');
 
+      // Clean up disbox_downloads subdirectory
+      final disboxTempDir = Directory('${tempDir.path}/disbox_downloads');
+      if (await disboxTempDir.exists()) {
+        await for (final entity in disboxTempDir.list()) {
+          if (entity is File) {
+            await entity.delete();
+            print('[DisboxService] Deleted stale download file: ${path.basename(entity.path)}');
+          }
+        }
+      }
+
       // Only delete .part files and known temp patterns to avoid deleting other app data
       await for (final entity in tempDir.list()) {
         if (entity is File) {
