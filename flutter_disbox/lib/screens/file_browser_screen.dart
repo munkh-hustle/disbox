@@ -344,8 +344,13 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
       // Download to temporary file in cache directory
       final tempDir = await getTemporaryDirectory();
+      // Create subdirectory for disbox downloads to avoid permission issues
+      final disboxTempDir = Directory('${tempDir.path}/disbox_downloads');
+      if (!await disboxTempDir.exists()) {
+        await disboxTempDir.create(recursive: true);
+      }
       // Use unique filename to avoid conflicts
-      tempPath = '${tempDir.path}/disbox_temp_${file.id}_${file.name}';
+      tempPath = '${disboxTempDir.path}/${file.id}_${file.name}';
       
       print('[FileCopy] Downloading to temp: $tempPath');
       
@@ -743,6 +748,42 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   /// Import metadata from a shared config file
   Future<void> _importMetadata() async {
+    // Show dialog with options for different import methods
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Import Options'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.description, color: Colors.blue),
+              title: const Text('From JSON File'),
+              subtitle: const Text('Import config file from device'),
+              onTap: () => Navigator.pop(context, 'file'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.message, color: Colors.green),
+              title: const Text('From Discord Metadata'),
+              subtitle: const Text('Paste metadata text from Discord'),
+              onTap: () => Navigator.pop(context, 'metadata'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == null) return;
+
+    if (result == 'file') {
+      await _importMetadataFromFile();
+    } else if (result == 'metadata') {
+      await _importMetadataFromTextDialog();
+    }
+  }
+
+  /// Import configuration from a JSON file
+  Future<void> _importMetadataFromFile() async {
     try {
       // Pick the config file
       final result = await FilePicker.pickFiles(
@@ -849,6 +890,95 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     }
   }
 
+  /// Show dialog to paste Discord metadata text for import
+  Future<void> _importMetadataFromTextDialog() async {
+    final controller = TextEditingController();
+    
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Import Discord Metadata'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Paste metadata text from Discord messages below.\nYou can paste multiple lines at once.',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              maxLines: 8,
+              minLines: 4,
+              decoration: const InputDecoration(
+                hintText: '[DISBOX] {"type":"disbox_metadata",...}',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.all(12),
+              ),
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) {
+      controller.dispose();
+      return;
+    }
+
+    final text = controller.text.trim();
+    controller.dispose();
+
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No metadata text provided')),
+      );
+      return;
+    }
+
+    try {
+      // Split by newlines and filter valid metadata lines
+      final lines = text.split('\n')
+          .where((line) => line.trim().isNotEmpty && line.trim().startsWith('[DISBOX]'))
+          .toList();
+      
+      int importedCount = 0;
+      if (lines.length > 1) {
+        importedCount = await _disboxService.importMultipleMetadataFromText(lines);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Successfully imported $importedCount file(s)!')),
+        );
+      } else {
+        final result = await _disboxService.importMetadataFromText(text);
+        if (result != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Successfully imported: ${result.name}')),
+          );
+        } else {
+          throw Exception('Failed to import metadata');
+        }
+      }
+      
+      // Reload files to show newly imported ones
+      await _loadFiles();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Import failed: $e')),
+      );
+    }
+  }
+
   /// Share metadata for a specific file (for advanced users)
   Future<void> _shareMetadata(DisboxFile file) async {
     try {
@@ -877,6 +1007,111 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Share failed: $e')),
       );
+    }
+  }
+
+  /// Clear cache and app data to free up storage space
+  Future<void> _clearCacheAndData() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear Cache & Data'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'This will delete:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text('• All temporary files (cache)'),
+            const Text('• Downloaded file chunks'),
+            const Text('• Failed upload remnants'),
+            const SizedBox(height: 16),
+            const Text(
+              'This will NOT delete:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text('• Your webhook configuration'),
+            const Text('• File metadata stored in database'),
+            const Text('• Files stored on Discord'),
+            const SizedBox(height: 16),
+            const Text(
+              'Are you sure you want to continue?',
+              style: TextStyle(color: Colors.red),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Clear', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      // Get cache directory
+      final tempDir = await getTemporaryDirectory();
+      final disboxTempDir = Directory('${tempDir.path}/disbox_downloads');
+      
+      // Delete downloads directory if it exists
+      if (await disboxTempDir.exists()) {
+        await disboxTempDir.delete(recursive: true);
+        print('[ClearCache] Deleted disbox_downloads directory');
+      }
+      
+      // Also clean any other temp files in cache
+      final cacheDir = Directory(tempDir.path);
+      if (await cacheDir.exists()) {
+        await cacheDir.list().forEach((entity) async {
+          if (entity is File || entity is Directory) {
+            try {
+              await entity.delete(recursive: true);
+              print('[ClearCache] Deleted: ${entity.path}');
+            } catch (e) {
+              print('[ClearCache WARNING] Could not delete ${entity.path}: $e');
+            }
+          }
+        });
+      }
+      
+      // Recreate the downloads directory
+      await disboxTempDir.create(recursive: true);
+      
+      // Also trigger the service's cleanup method
+      await _disboxService.cleanupTempFiles();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cache cleared successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+      
+      print('[ClearCache] Cache cleared successfully');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to clear cache: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      print('[ClearCache ERROR] Failed to clear cache: $e');
     }
   }
 
@@ -911,6 +1146,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                         onTap: () {
                           Navigator.pop(context);
                           _importMetadata();
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.delete_sweep, color: Colors.red),
+                        title: const Text('Clear Cache & Data'),
+                        subtitle: const Text('Free up storage space'),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _clearCacheAndData();
                         },
                       ),
                     ],

@@ -1,28 +1,23 @@
 ```
-# Build artifacts
-/build/
-/ios/.symlinks
-/android/.gradle
-/android/build
-/android/app/build
-/pubspec.lock
-
-# Environment
-.env
-.env.local
-.env.*
-!.env.example
-
-# IDE files
-.vscode/
-.idea/
-*.iml
-*.ipr
+# Flutter/Dart
+.dart_tool/
+.build/
+packages/
 *.iws
 *.swp
-*.swo
+*~
+.vscode/
+.idea/
 
-# OS generated files
-.DS_Store
-Thumbs.db
+# Dependencies
+pubspec.lock
+
+# Generated code
+lib/generated/
+android/.gradle/
+ios/Pods/
+ios/.symlinks/
+macos/Pods/
+macos/.symlinks/
+windows/Flutter/ephemeral/
 ```
