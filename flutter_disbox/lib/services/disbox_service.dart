@@ -219,15 +219,24 @@ class DisboxService extends ChangeNotifier {
       if (data.containsKey('file_tree') && data['file_tree'] != null) {
         print('[DisboxService] Importing file tree from JSON...');
 
-        // Ensure file_tree is a Map, not a List
         final fileTreeData = data['file_tree'];
-        if (fileTreeData is! Map) {
+        
+        // Handle both formats:
+        // - New format (from export): file_tree is a List<DisboxFile>
+        // - Old format: file_tree is a Map (tree structure)
+        if (fileTreeData is List) {
+          // New format: Convert list of DisboxFile to tree structure
+          print('[DisboxService] Importing file tree from List format...');
+          _fileTree = await _buildFileTreeFromList(fileTreeData);
+        } else if (fileTreeData is Map) {
+          // Old format: Direct tree structure
+          print('[DisboxService] Importing file tree from Map format...');
+          _fileTree =
+              _convertMapToStringKeys(fileTreeData) as Map<String, dynamic>?;
+        } else {
           throw Exception(
-              "'file_tree' must be an object, not a ${fileTreeData.runtimeType}");
+              "'file_tree' must be an object or array, not a ${fileTreeData.runtimeType}");
         }
-
-        _fileTree =
-            _convertMapToStringKeys(fileTreeData) as Map<String, dynamic>?;
 
         // Save imported file tree to Hive
         await _saveFileTree();
@@ -244,6 +253,95 @@ class DisboxService extends ChangeNotifier {
       print('[DisboxService ERROR] Failed to import config: $e');
       return false;
     }
+  }
+
+  /// Import file metadata from Discord message text.
+  ///
+  /// This allows importing individual file metadata from Discord messages
+  /// that contain the [DISBOX] metadata prefix, without replacing existing data.
+  ///
+  /// The message format should be:
+  /// [DISBOX] {"type":"disbox_metadata","version":"1.0","name":"...",...}
+  ///
+  /// Returns the imported DisboxFile if successful, null otherwise.
+  Future<DisboxFile?> importMetadataFromText(String metadataText) async {
+    try {
+      print('[DisboxService] Importing metadata from text...');
+
+      // Extract JSON from the message (remove [DISBOX] prefix if present)
+      String jsonStr = metadataText.trim();
+      const prefix = '[DISBOX]';
+      if (jsonStr.startsWith(prefix)) {
+        jsonStr = jsonStr.substring(prefix.length).trim();
+      }
+
+      // Parse the metadata JSON
+      final metadata = jsonDecode(jsonStr) as Map<String, dynamic>;
+
+      // Validate it's a disbox_metadata type
+      final type = metadata['type'] as String?;
+      if (type != 'disbox_metadata') {
+        throw Exception("Not a valid Disbox metadata message (type: $type)");
+      }
+
+      // Create DisboxFile from the metadata
+      // Note: Discord message metadata doesn't have a unique file ID in the same way,
+      // so we use the first chunk ID or generate one from the path
+      final chunkIds = (metadata['chunkIds'] as List?)?.cast<String>() ?? [];
+      final fileId = chunkIds.isNotEmpty ? chunkIds.first : _hashWebhookUrl(metadata['path'] as String);
+
+      final disboxFile = DisboxFile(
+        id: fileId,
+        name: metadata['name'] as String,
+        path: metadata['path'] as String,
+        isFolder: metadata['isFolder'] as bool? ?? false,
+        size: metadata['size'] as int?,
+        mimeType: metadata['mimeType'] as String?,
+        chunkMessageIds: chunkIds,
+        createdAt: DateTime.parse(metadata['createdAt'] as String),
+        modifiedAt: metadata['modifiedAt'] != null
+            ? DateTime.parse(metadata['modifiedAt'] as String)
+            : DateTime.parse(metadata['createdAt'] as String),
+      );
+
+      print('[DisboxService] Parsed metadata: ${disboxFile.name} (${disboxFile.path})');
+
+      // Ensure Hive is initialized
+      if (_fileTreeBox == null) {
+        print('[DisboxService] Initializing Hive...');
+        await _initHive();
+      }
+
+      // Load existing file tree or create new one
+      await _loadFileTree();
+
+      // Add the file to the tree (this will merge/update without deleting existing data)
+      _addFileToTree(_fileTree!, disboxFile);
+
+      // Save updated tree to local storage
+      await _saveFileTree();
+
+      print('[DisboxService] Successfully imported metadata for: ${disboxFile.name}');
+      notifyListeners();
+      return disboxFile;
+    } catch (e) {
+      print('[DisboxService ERROR] Failed to import metadata from text: $e');
+      return null;
+    }
+  }
+
+  /// Import multiple file metadata entries from a list of Discord message texts.
+  ///
+  /// Returns the number of successfully imported files.
+  Future<int> importMultipleMetadataFromText(List<String> metadataTexts) async {
+    int successCount = 0;
+    for (final text in metadataTexts) {
+      final result = await importMetadataFromText(text);
+      if (result != null) {
+        successCount++;
+      }
+    }
+    return successCount;
   }
 
   /// Check if webhook URL is configured
@@ -352,15 +450,21 @@ class DisboxService extends ChangeNotifier {
       // Decode from JSON string and convert Map<dynamic, dynamic> to Map<String, dynamic>
       final decoded = jsonDecode(storedData as String);
 
-      // Ensure file_tree is a Map, not a List
+      // Handle both formats: List (from new export) or Map (old format)
       final fileTreeData = decoded['file_tree'];
-      if (fileTreeData is! Map) {
+      if (fileTreeData is List) {
+        // New format: Build tree from list
+        print('[DisboxService] Loading file tree from List format in storage...');
+        _fileTree = await _buildFileTreeFromList(fileTreeData);
+      } else if (fileTreeData is Map) {
+        // Old format: Direct tree structure
+        print('[DisboxService] Loading file tree from Map format in storage...');
+        _fileTree =
+            _convertMapToStringKeys(fileTreeData) as Map<String, dynamic>?;
+      } else {
         throw Exception(
-            "'file_tree' must be an object, not a ${fileTreeData.runtimeType}");
+            "'file_tree' must be an object or array, not a ${fileTreeData.runtimeType}");
       }
-
-      _fileTree =
-          _convertMapToStringKeys(fileTreeData) as Map<String, dynamic>?;
 
       // Handle case where conversion returns null
       if (_fileTree == null) {
@@ -505,6 +609,44 @@ class DisboxService extends ChangeNotifier {
         final childPath = path == '/' ? '/$childName' : '$path/$childName';
         _flattenFileTreeToList(childNode, childPath, result);
       }
+    }
+  }
+
+  /// Build a hierarchical file tree from a flat list of DisboxFile objects.
+  /// This is used when importing a config file that was exported from another device.
+  Future<Map<String, dynamic>> _buildFileTreeFromList(
+      List<dynamic> fileList) async {
+    try {
+      // Convert the list of JSON maps to DisboxFile objects
+      final disboxFiles = fileList
+          .whereType<Map<String, dynamic>>()
+          .map((json) => DisboxFile.fromJson(json))
+          .toList();
+
+      // Create root node
+      final root = <String, dynamic>{
+        'id': 'root',
+        'name': 'root',
+        'type': 'directory',
+        'children': <String, dynamic>{},
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+
+      // Sort by path depth to ensure parents are created before children
+      final sortedFiles = List<DisboxFile>.from(disboxFiles)
+        ..sort((a, b) => a.path.length.compareTo(b.path.length));
+
+      for (final file in sortedFiles) {
+        _addFileToTree(root, file);
+      }
+
+      print(
+          '[DisboxService] Built file tree with ${disboxFiles.length} items from list');
+      return root;
+    } catch (e) {
+      print('[DisboxService ERROR] Failed to build file tree from list: $e');
+      rethrow;
     }
   }
 

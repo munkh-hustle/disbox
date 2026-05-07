@@ -1,28 +1,37 @@
 ```
-# Build artifacts
-/build/
-/ios/.symlinks
-/android/.gradle
-/android/build
-/android/app/build
-/pubspec.lock
+# Flutter/Dart specific
+.dart_tool/
+.packages
+pubspec.lock
+build/
 
-# Environment
-.env
-.env.local
-.env.*
-!.env.example
-
-# IDE files
+# IDE
 .vscode/
 .idea/
 *.iml
 *.ipr
 *.iws
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Logs
+*.log
+**/logs
+
+# Temp files
+*.tmp
 *.swp
 *.swo
 
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Coverage
+coverage/
+*.coverage
+lcov.info
 ```
