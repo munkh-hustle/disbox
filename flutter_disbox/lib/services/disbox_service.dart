@@ -222,15 +222,15 @@ class DisboxService extends ChangeNotifier {
         final fileTreeData = data['file_tree'];
         
         // Handle both formats:
-        // - New format (from export): file_tree is a List<DisboxFile>
-        // - Old format: file_tree is a Map (tree structure)
+        // - Standard format (from export): file_tree is a List<DisboxFile>
+        // - Legacy format: file_tree is a Map (tree structure)
         if (fileTreeData is List) {
-          // New format: Convert list of DisboxFile to tree structure
+          // Standard format: Convert list of DisboxFile to tree structure
           print('[DisboxService] Importing file tree from List format...');
           _fileTree = await _buildFileTreeFromList(fileTreeData);
         } else if (fileTreeData is Map) {
-          // Old format: Direct tree structure
-          print('[DisboxService] Importing file tree from Map format...');
+          // Legacy format: Direct tree structure
+          print('[DisboxService] Importing file tree from legacy Map format...');
           _fileTree =
               _convertMapToStringKeys(fileTreeData) as Map<String, dynamic>?;
         } else {
@@ -238,7 +238,7 @@ class DisboxService extends ChangeNotifier {
               "'file_tree' must be an object or array, not a ${fileTreeData.runtimeType}");
         }
 
-        // Save imported file tree to Hive
+        // Save imported file tree to Hive (will be saved in List format)
         await _saveFileTree();
         print('[DisboxService] Imported file tree saved to local storage');
       } else {
@@ -447,23 +447,37 @@ class DisboxService extends ChangeNotifier {
     final storedData = _fileTreeBox!.get(_accountId);
 
     if (storedData != null) {
-      // Decode from JSON string and convert Map<dynamic, dynamic> to Map<String, dynamic>
+      // Decode from JSON string - now always a List format
       final decoded = jsonDecode(storedData as String);
 
-      // Handle both formats: List (from new export) or Map (old format)
-      final fileTreeData = decoded['file_tree'];
-      if (fileTreeData is List) {
-        // New format: Build tree from list
-        print('[DisboxService] Loading file tree from List format in storage...');
-        _fileTree = await _buildFileTreeFromList(fileTreeData);
-      } else if (fileTreeData is Map) {
-        // Old format: Direct tree structure
-        print('[DisboxService] Loading file tree from Map format in storage...');
+      // Now we always store as List, so just build tree from it
+      if (decoded is List) {
+        // Standard format: Build tree from list of DisboxFile
+        print('[DisboxService] Loading file tree from List format...');
+        _fileTree = await _buildFileTreeFromList(decoded);
+      } else if (decoded is Map && decoded.containsKey('file_tree')) {
+        // Legacy format with wrapper object (from old exports)
+        final fileTreeData = decoded['file_tree'];
+        if (fileTreeData is List) {
+          print('[DisboxService] Loading file tree from legacy List format...');
+          _fileTree = await _buildFileTreeFromList(fileTreeData);
+        } else if (fileTreeData is Map) {
+          // Very old format: Direct tree structure
+          print('[DisboxService] Loading file tree from legacy Map format...');
+          _fileTree =
+              _convertMapToStringKeys(fileTreeData) as Map<String, dynamic>?;
+        } else {
+          throw Exception(
+              "'file_tree' must be an object or array, not a ${fileTreeData.runtimeType}");
+        }
+      } else if (decoded is Map) {
+        // Very old format: Direct tree structure without wrapper
+        print('[DisboxService] Loading file tree from legacy direct Map format...');
         _fileTree =
-            _convertMapToStringKeys(fileTreeData) as Map<String, dynamic>?;
+            _convertMapToStringKeys(decoded) as Map<String, dynamic>?;
       } else {
         throw Exception(
-            "'file_tree' must be an object or array, not a ${fileTreeData.runtimeType}");
+            "Stored data must be a List or Map, not a ${decoded.runtimeType}");
       }
 
       // Handle case where conversion returns null
@@ -503,6 +517,8 @@ class DisboxService extends ChangeNotifier {
   /// Save file tree to local Hive storage.
   ///
   /// Called after creating, updating, or deleting files to persist changes.
+  /// Always saves in List format (flat list of DisboxFile) for consistency
+  /// with export functionality.
   Future<void> _saveFileTree() async {
     if (_webhookUrl == null || _fileTreeBox == null || _fileTree == null) {
       print(
@@ -511,10 +527,14 @@ class DisboxService extends ChangeNotifier {
     }
 
     try {
-      // Encode to JSON string and save to Hive
-      final jsonData = jsonEncode(_fileTree);
+      // Convert tree to flat list of DisboxFile, then save as JSON
+      final fileList = <DisboxFile>[];
+      _flattenFileTreeToList(_fileTree!, '/', fileList);
+      
+      // Encode list to JSON string and save to Hive
+      final jsonData = jsonEncode(fileList.map((f) => f.toJson()).toList());
       await _fileTreeBox!.put(_accountId, jsonData);
-      print('[DisboxService] File tree saved to local storage');
+      print('[DisboxService] File tree saved to local storage (${fileList.length} files)');
     } catch (e) {
       print('[DisboxService ERROR] Failed to save file tree: $e');
     }
