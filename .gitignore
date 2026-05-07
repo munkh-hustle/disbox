@@ -1,20 +1,26 @@
 ```
 # Build artifacts
 /build/
-/bin/
-/obj/
+/ios/Flutter/flutter_assets/
+/android/app/src/main/assets/
 
 # Dependencies
+.pub-cache/
 .dart_tool/
 .packages
-
-# Logs
-*.log
 
 # Environment
 .env
 .env.local
 *.env.*
+
+# Logs
+*.log
+**/logs
+
+# OS generated files
+.DS_Store
+Thumbs.db
 
 # IDE files
 .vscode/
@@ -22,7 +28,7 @@
 *.swp
 *.swo
 
-# OS generated files
-.DS_Store
-Thumbs.db
+# Coverage
+coverage/
+*.coverage
 ```

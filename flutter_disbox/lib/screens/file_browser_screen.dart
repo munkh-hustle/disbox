@@ -926,22 +926,26 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         title: const Text('Import Discord Metadata'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
               'Paste metadata text from Discord messages below.\nYou can paste multiple lines at once.',
               style: TextStyle(fontSize: 14),
             ),
             const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              maxLines: 8,
-              minLines: 4,
-              decoration: const InputDecoration(
-                hintText: '[DISBOX] {"type":"disbox_metadata",...}',
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.all(12),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 200),
+              child: TextField(
+                controller: controller,
+                maxLines: 8,
+                minLines: 4,
+                decoration: const InputDecoration(
+                  hintText: '[DISBOX] {"type":"disbox_metadata",...}',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.all(12),
+                ),
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
               ),
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
             ),
           ],
         ),
