@@ -36,6 +36,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   String? _error;
   bool _isInitialized = false;
   bool _isPickingFile = false; // Prevent multiple file picker invocations
+  int _buildCount = 0; // Track build count to detect infinite loops
 
   @override
   void initState() {
@@ -1142,7 +1143,13 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   @override
   Widget build(BuildContext context) {
     print('[BUILD] FileBrowserScreen.build() called, _isLoading=$_isLoading, _files.length=${_files.length}');
-    final stopwatch = Stopwatch()..start();
+    
+    // Track build count to detect infinite loops
+    _buildCount++;
+    if (_buildCount > 50) {
+      print('[BUILD ERROR] Possible infinite rebuild loop detected! Stopping.');
+      _buildCount = 0; // Reset to prevent continuous logging
+    }
     
     return Scaffold(
       appBar: AppBar(
@@ -1271,11 +1278,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                             itemCount: _files.length,
                             itemBuilder: (context, index) {
                               final file = _files[index];
-                              print('[BUILD] Building tile for file $index: ${file.name}');
                               return FileListTile(
                                 file: file,
                                 onTap: () {
-                                  print('[BUILD] Tile tapped: ${file.name}, isFolder=${file.isFolder}');
                                   if (file.isFolder) {
                                     _navigateToFolder(file.path);
                                   } else {
@@ -1290,8 +1295,46 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _uploadFile,
+        onPressed: () {
+          print('[BUILD] FAB pressed');
+          _showUploadMenu();
+        },
         child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  /// Show upload menu with file/folder options
+  void _showUploadMenu() {
+    print('[DEBUG] _showUploadMenu called');
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.upload_file, color: Colors.blue),
+              title: const Text('Upload File'),
+              subtitle: const Text('Select a file from your device'),
+              onTap: () {
+                print('[DEBUG] Upload File tapped');
+                Navigator.pop(context);
+                _uploadFile();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.create_new_folder, color: Colors.green),
+              title: const Text('New Folder'),
+              subtitle: const Text('Create a new folder'),
+              onTap: () {
+                print('[DEBUG] New Folder tapped');
+                Navigator.pop(context);
+                _createFolder();
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

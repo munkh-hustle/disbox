@@ -19,9 +19,6 @@ class FileListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    print('[FileListTile] Building tile for: ${file.name}');
-    final stopwatch = Stopwatch()..start();
-    
     final result = ListTile(
       leading: FileIcon(file: file, size: 40),
       title: Text(
@@ -66,7 +63,6 @@ class FileListTile extends StatelessWidget {
       onLongPress: onLongPress,
     );
     
-    print('[FileListTile] Built tile for ${file.name} in ${stopwatch.elapsedMilliseconds}ms');
     return result;
   }
 

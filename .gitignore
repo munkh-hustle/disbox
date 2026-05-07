@@ -1,44 +1,29 @@
 ```
-# Flutter/Dart specific
-.dart_tool/
-.build/
-.flutter-plugins
-.flutter-plugin-dependencies
-.packages
-*.iws
-*.iml
-*.ipr
-.idea/
-
 # Build artifacts
-build/
-*.apk
-*.aab
-*.app
-*.exe
-*.dll
-*.so
-*.dylib
+/build/
+/bin/
+/obj/
 
 # Dependencies
-pubspec.lock
+.dart_tool/
+.packages
 
-# Logs
+# Logs and temp files
 *.log
+*.tmp
 
 # Environment
 .env
 .env.local
 *.env.*
 
-# Editor
+# Editor/IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*.tmp
 
-# OS generated
+# OS generated files
 .DS_Store
 Thumbs.db
 ```
