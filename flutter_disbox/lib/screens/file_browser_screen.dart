@@ -918,6 +918,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   /// Show dialog to paste Discord metadata text for import
   Future<void> _importMetadataFromTextDialog() async {
     final controller = TextEditingController();
+    String? textToImport;
     
     final confirmed = await showDialog<bool>(
       context: context,
@@ -957,15 +958,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       ),
     );
 
+    // Capture text before disposing
+    textToImport = controller.text.trim();
+    controller.dispose();
+
     if (confirmed != true) {
-      controller.dispose();
       return;
     }
 
-    final text = controller.text.trim();
-    controller.dispose();
-
-    if (text.isEmpty) {
+    if (textToImport.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No metadata text provided')),
       );
@@ -974,7 +975,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
     try {
       // Split by newlines and filter valid metadata lines
-      final lines = text.split('\n')
+      final lines = textToImport.split('\n')
           .where((line) => line.trim().isNotEmpty && line.trim().startsWith('[DISBOX]'))
           .toList();
       
@@ -985,7 +986,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           SnackBar(content: Text('Successfully imported $importedCount file(s)!')),
         );
       } else {
-        final result = await _disboxService.importMetadataFromText(text);
+        final result = await _disboxService.importMetadataFromText(textToImport);
         if (result != null) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Successfully imported: ${result.name}')),
