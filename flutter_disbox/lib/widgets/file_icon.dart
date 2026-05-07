@@ -15,14 +15,24 @@ class FileIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    print('[FileIcon] Building icon for: ${file.name}');
+    final stopwatch = Stopwatch()..start();
+    
+    Widget result;
     if (file.isFolder) {
-      return Icon(Icons.folder, size: size, color: Colors.amber[700]);
+      result = Icon(Icons.folder, size: size, color: Colors.amber[700]);
+    } else {
+      result = _getFileIcon(file.name, file.mimeType);
     }
-
-    return _getFileIcon(file.name, file.mimeType);
+    
+    print('[FileIcon] Built icon for ${file.name} in ${stopwatch.elapsedMilliseconds}ms');
+    return result;
   }
 
   Widget _getFileIcon(String filename, String? mimeType) {
+    print('[FileIcon] _getFileIcon called for: $filename');
+    final stopwatch = Stopwatch()..start();
+    
     final ext = _getExtension(filename).toLowerCase();
     
     // Determine icon based on file type
@@ -52,7 +62,9 @@ class FileIcon extends StatelessWidget {
       iconColor = Colors.grey;
     }
 
-    return Icon(iconData, size: size, color: iconColor);
+    final result = Icon(iconData, size: size, color: iconColor);
+    print('[FileIcon] _getFileIcon completed for $filename in ${stopwatch.elapsedMilliseconds}ms, ext=$ext');
+    return result;
   }
 
   String _getExtension(String filename) {

@@ -19,7 +19,10 @@ class FileListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
+    print('[FileListTile] Building tile for: ${file.name}');
+    final stopwatch = Stopwatch()..start();
+    
+    final result = ListTile(
       leading: FileIcon(file: file, size: 40),
       title: Text(
         file.name,
@@ -62,6 +65,9 @@ class FileListTile extends StatelessWidget {
       onTap: onTap,
       onLongPress: onLongPress,
     );
+    
+    print('[FileListTile] Built tile for ${file.name} in ${stopwatch.elapsedMilliseconds}ms');
+    return result;
   }
 
   String _formatDate(DateTime date) {
