@@ -179,6 +179,33 @@ class DisboxService extends ChangeNotifier {
       print('[DisboxService] Importing config from: ${jsonFile.path}');
 
       final content = await jsonFile.readAsString();
+      return await _importMetadataFromString(content, 'file');
+    } catch (e) {
+      print('[DisboxService ERROR] Failed to import config: $e');
+      return false;
+    }
+  }
+
+  /// Import webhook URL and file tree from a JSON string (text).
+  ///
+  /// The JSON string should contain:
+  /// - webhook_url: The Discord webhook URL
+  /// - file_tree: (optional) File tree metadata to import as a list
+  ///
+  /// Returns true if import was successful, false otherwise.
+  Future<bool> importMetadataFromText(String jsonString) async {
+    try {
+      print('[DisboxService] Importing metadata from text...');
+      return await _importMetadataFromString(jsonString, 'text');
+    } catch (e) {
+      print('[DisboxService ERROR] Failed to import metadata from text: $e');
+      return false;
+    }
+  }
+
+  /// Internal method to import metadata from a JSON string
+  Future<bool> _importMetadataFromString(String content, String source) async {
+    try {
       final data = jsonDecode(content);
 
       if (data is! Map) {
@@ -196,7 +223,7 @@ class DisboxService extends ChangeNotifier {
         throw Exception("Invalid webhook URL format in JSON");
       }
 
-      // Initialize Hive
+      // Initialize Hive FIRST before any operations that use it
       if (_fileTreeBox == null) {
         print('[DisboxService] Initializing Hive...');
         await _initHive();
@@ -217,21 +244,34 @@ class DisboxService extends ChangeNotifier {
 
       // Check if file tree data is included
       if (data.containsKey('file_tree') && data['file_tree'] != null) {
-        print('[DisboxService] Importing file tree from JSON...');
+        print('[DisboxService] Importing file tree from $source...');
 
-        // Ensure file_tree is a Map, not a List
         final fileTreeData = data['file_tree'];
-        if (fileTreeData is! Map) {
+        
+        // Handle both Map (old format) and List (new format)
+        if (fileTreeData is List) {
+          // New format: file_tree is a list of DisboxFile JSON objects
+          print('[DisboxService] Loading file tree from List format...');
+          final fileList = <DisboxFile>[];
+          for (final item in fileTreeData) {
+            if (item is Map<String, dynamic>) {
+              fileList.add(DisboxFile.fromJson(item));
+            }
+          }
+          
+          // Save using saveFileTreeFromList which handles the conversion
+          await saveFileTreeFromList(fileList);
+          print('[DisboxService] Built file tree with ${fileList.length} items from list');
+        } else if (fileTreeData is Map) {
+          // Old format: file_tree is a hierarchical map
+          print('[DisboxService] Loading file tree from Map format...');
+          _fileTree = _convertMapToStringKeys(fileTreeData) as Map<String, dynamic>?;
+          await _saveFileTree();
+          print('[DisboxService] Imported file tree saved to local storage');
+        } else {
           throw Exception(
-              "'file_tree' must be an object, not a ${fileTreeData.runtimeType}");
+              "'file_tree' must be an object or array, not a ${fileTreeData.runtimeType}");
         }
-
-        _fileTree =
-            _convertMapToStringKeys(fileTreeData) as Map<String, dynamic>?;
-
-        // Save imported file tree to Hive
-        await _saveFileTree();
-        print('[DisboxService] Imported file tree saved to local storage');
       } else {
         // Load existing file tree from local storage (if any)
         await _loadFileTree();
@@ -241,8 +281,8 @@ class DisboxService extends ChangeNotifier {
       print('[DisboxService] Config import successful');
       return true;
     } catch (e) {
-      print('[DisboxService ERROR] Failed to import config: $e');
-      return false;
+      print('[DisboxService ERROR] Failed to import from $source: $e');
+      rethrow;
     }
   }
 

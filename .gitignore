@@ -1,26 +1,30 @@
 ```
 # Build artifacts
 /build/
-/ios/.symlinks
-/android/.gradle
-/android/build
-/android/app/build
-/pubspec.lock
+/bin/
+/obj/
+
+# Dependencies
+.pub/
+.dart_tool/
+packages/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
 
 # Environment
 .env
 .env.local
-.env.*
-!.env.example
+*.env.*
 
-# IDE files
+# Editors
 .vscode/
 .idea/
 *.iml
 *.ipr
 *.iws
-*.swp
-*.swo
 
 # OS generated files
 .DS_Store
