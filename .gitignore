@@ -1,13 +1,17 @@
 ```
-# Build artifacts
-/build/
-/ios/Flutter/flutter_assets/
-/android/app/src/main/assets/
-
-# Dependencies
-.pub-cache/
+# Flutter/Dart
 .dart_tool/
+.build/
 .packages
+flutter/ephemeral/
+*.iws
+*.sw?
+**/lib/**
+**/test/**
+
+# IDE
+.idea/
+.vscode/
 
 # Environment
 .env
@@ -18,17 +22,7 @@
 *.log
 **/logs
 
-# OS generated files
+# OS
 .DS_Store
 Thumbs.db
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Coverage
-coverage/
-*.coverage
 ```

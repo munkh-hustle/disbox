@@ -951,26 +951,31 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () {
+              textToImport = controller.text.trim();
+              Navigator.pop(context, false);
+            },
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () {
+              textToImport = controller.text.trim();
+              Navigator.pop(context, true);
+            },
             child: const Text('Import'),
           ),
         ],
       ),
     );
 
-    // Capture text before disposing
-    textToImport = controller.text.trim();
+    // Dispose controller after dialog is closed
     controller.dispose();
 
     if (confirmed != true) {
       return;
     }
 
-    if (textToImport.isEmpty) {
+    if (textToImport == null || textToImport!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No metadata text provided')),
       );
