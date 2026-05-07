@@ -1010,6 +1010,111 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     }
   }
 
+  /// Clear cache and app data to free up storage space
+  Future<void> _clearCacheAndData() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear Cache & Data'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'This will delete:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text('• All temporary files (cache)'),
+            const Text('• Downloaded file chunks'),
+            const Text('• Failed upload remnants'),
+            const SizedBox(height: 16),
+            const Text(
+              'This will NOT delete:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text('• Your webhook configuration'),
+            const Text('• File metadata stored in database'),
+            const Text('• Files stored on Discord'),
+            const SizedBox(height: 16),
+            const Text(
+              'Are you sure you want to continue?',
+              style: TextStyle(color: Colors.red),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Clear', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      // Get cache directory
+      final tempDir = await getTemporaryDirectory();
+      final disboxTempDir = Directory('${tempDir.path}/disbox_downloads');
+      
+      // Delete downloads directory if it exists
+      if (await disboxTempDir.exists()) {
+        await disboxTempDir.delete(recursive: true);
+        print('[ClearCache] Deleted disbox_downloads directory');
+      }
+      
+      // Also clean any other temp files in cache
+      final cacheDir = Directory(tempDir.path);
+      if (await cacheDir.exists()) {
+        await cacheDir.list().forEach((entity) async {
+          if (entity is File || entity is Directory) {
+            try {
+              await entity.delete(recursive: true);
+              print('[ClearCache] Deleted: ${entity.path}');
+            } catch (e) {
+              print('[ClearCache WARNING] Could not delete ${entity.path}: $e');
+            }
+          }
+        });
+      }
+      
+      // Recreate the downloads directory
+      await disboxTempDir.create(recursive: true);
+      
+      // Also trigger the service's cleanup method
+      await _disboxService.cleanupTempFiles();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cache cleared successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+      
+      print('[ClearCache] Cache cleared successfully');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to clear cache: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      print('[ClearCache ERROR] Failed to clear cache: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1041,6 +1146,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                         onTap: () {
                           Navigator.pop(context);
                           _importMetadata();
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.delete_sweep, color: Colors.red),
+                        title: const Text('Clear Cache & Data'),
+                        subtitle: const Text('Free up storage space'),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _clearCacheAndData();
                         },
                       ),
                     ],

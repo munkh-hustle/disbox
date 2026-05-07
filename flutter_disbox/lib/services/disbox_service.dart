@@ -139,6 +139,11 @@ class DisboxService extends ChangeNotifier {
     }
   }
 
+  /// Public method to cleanup temp files (called from UI)
+  Future<void> cleanupTempFiles() async {
+    await _cleanupTempFiles();
+  }
+
   /// Set the webhook URL and generate account ID from it.
   ///
   /// The webhook URL is stored locally only and never sent to third parties.
