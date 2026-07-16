@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as Math;
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -8,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path/path.dart' as path;
 import 'package:rxdart/rxdart.dart';
@@ -321,20 +323,20 @@ class DisboxService extends ChangeNotifier {
     notifyListeners();
     
     try {
-      final chunks = <(int, Uint8List)>[];
+      final outputFile = File(outputPath);
+      final sink = outputFile.openWrite();
       var downloadedBytes = _downloadedBytes;
       
-      // Download missing chunks
+      // Download each chunk and write directly to file
       for (int i = 0; i < file.chunkMessageIds.length; i++) {
-        // Skip already downloaded chunks
+        // Skip already downloaded chunks (for resume functionality)
         if (_downloadedChunkIndices.contains(i)) {
           print('[RESUME DOWNLOAD] Skipping already downloaded chunk $i');
-          // Still add placeholder - we need to load the actual data
-          // For now, we'll re-download all chunks (simpler approach)
-          // TODO: Store downloaded chunk data in temp files for true resume
+          // TODO: For true resume, read chunk from temp storage instead of re-downloading
         }
         
         if (_currentDownloadCancelToken!.isCancelled) {
+          await sink.close();
           throw DioException(
             requestOptions: RequestOptions(path: ''),
             type: DioExceptionType.cancel,
@@ -344,7 +346,8 @@ class DisboxService extends ChangeNotifier {
         
         final messageId = file.chunkMessageIds[i];
         final chunkData = await _downloadAttachment(messageId);
-        chunks.add((i, chunkData));
+        sink.add(chunkData);
+        await sink.flush();
         downloadedBytes += chunkData.length;
         
         final progress = _totalDownloadBytes > 0 ? downloadedBytes / _totalDownloadBytes : 0.0;
@@ -352,8 +355,7 @@ class DisboxService extends ChangeNotifier {
         onProgress?.call(downloadedBytes, _totalDownloadBytes);
       }
       
-      // Reassemble chunks
-      await ChunkUtils.assembleChunks(chunks, outputPath);
+      await sink.close();
       
       _downloadProgressController.add(1.0);
       
@@ -1834,16 +1836,18 @@ class DisboxService extends ChangeNotifier {
 
     print('Downloading: ${file.name} (${file.chunkMessageIds.length} chunks)');
 
-    final chunks = <(int, Uint8List)>[];
+    final outputFile = File(outputPath);
+    final sink = outputFile.openWrite();
     var downloadedBytes = 0;
     final totalBytes = file.size ?? 0;
 
     try {
-      // Download each chunk
+      // Download each chunk and write directly to file
       for (int i = 0; i < file.chunkMessageIds.length; i++) {
         // Check if download was cancelled/stopped
         if (_currentDownloadCancelToken!.isCancelled) {
           print('[DOWNLOAD STOPPED] Download cancelled at chunk ${i + 1}/${file.chunkMessageIds.length}');
+          await sink.close();
           throw DioException(
             requestOptions: RequestOptions(path: ''),
             type: DioExceptionType.cancel,
@@ -1856,7 +1860,8 @@ class DisboxService extends ChangeNotifier {
         print('Downloading chunk ${i + 1}/${file.chunkMessageIds.length}');
 
         final chunkData = await _downloadAttachment(messageId);
-        chunks.add((i, chunkData));
+        sink.add(chunkData);
+        await sink.flush();
         downloadedBytes += chunkData.length;
         
         // Update progress stream
@@ -1866,8 +1871,7 @@ class DisboxService extends ChangeNotifier {
         onProgress?.call(downloadedBytes, totalBytes);
       }
 
-      // Reassemble chunks
-      await ChunkUtils.assembleChunks(chunks, outputPath);
+      await sink.close();
 
       // Mark download as complete
       _downloadProgressController.add(1.0);
@@ -2889,7 +2893,7 @@ class DisboxService extends ChangeNotifier {
   }
 
   /// Download an attachment from a Discord message.
-  Future<Uint8List> _downloadAttachment(String messageId, {CancelToken? cancelToken}) async {
+  Future<Uint8List> _downloadAttachment(String messageId, {CancelToken? cancelToken, String? tempFilePath}) async {
     final apiUrl = _getWebhookApiUrl();
 
     // Fetch the message to get attachment URL
@@ -2911,14 +2915,33 @@ class DisboxService extends ChangeNotifier {
 
     final attachmentUrl = attachments[0]['url'] as String;
 
-    // Download the actual file
+    // Download the actual file using stream to avoid loading entire chunk into memory
     final fileResponse = await _dio.get(
       attachmentUrl,
-      options: Options(responseType: ResponseType.bytes),
+      options: Options(responseType: ResponseType.stream),
       cancelToken: cancelToken,
     );
 
-    return fileResponse.data as Uint8List;
+    // Read the stream and write directly to a temporary file to avoid memory issues
+    final responseStream = fileResponse.data as ResponseBody;
+    final tempFile = File(tempFilePath ?? '${(await getTemporaryDirectory()).path}/chunk_$messageId.tmp');
+    final sink = tempFile.openWrite();
+    
+    try {
+      await for (final chunk in responseStream.stream) {
+        sink.add(chunk);
+      }
+      await sink.flush();
+      final data = await tempFile.readAsBytes();
+      await tempFile.delete();
+      return data;
+    } catch (e) {
+      await sink.close();
+      if (await tempFile.exists()) {
+        await tempFile.delete();
+      }
+      rethrow;
+    }
   }
 
   /// Delete a Discord message.

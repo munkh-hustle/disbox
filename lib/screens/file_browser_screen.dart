@@ -947,11 +947,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       
       print('[FileCopy] Downloaded file size: $fileSize bytes');
       
-      // Read the downloaded file
-      final fileData = await tempFile.readAsBytes();
-      
-      print('[FileCopy] Saving file: $fileName ($fileSize bytes)');
-      
       // Save to public Documents folder
       String? savedPath;
       String savedFileName = fileName; // Track the final saved filename
@@ -998,9 +993,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         // Update savedFileName for the success message
         savedFileName = finalFileName;
         
-        // Write the file
+        // Stream copy the file instead of loading into memory
         final savedFile = File(finalFilePath);
-        await savedFile.writeAsBytes(fileData);
+        final inputStream = tempFile.openRead();
+        final sink = savedFile.openWrite();
+        await inputStream.pipe(sink);
         savedPath = savedFile.path;
         
         print('[FileCopy] File saved to: $savedPath');
