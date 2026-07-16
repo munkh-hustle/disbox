@@ -998,9 +998,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         final inputStream = tempFile.openRead();
         final sink = savedFile.openWrite();
         await inputStream.pipe(sink);
-        await sink.flush();
-        await sink.close();
-        await inputStream.cancel();
         savedPath = savedFile.path;
         
         print('[FileCopy] File saved to: $savedPath');
