@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -1783,7 +1784,21 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         'version': '1.0',
       });
       
-      // Share the JSON data
+      // Copy metadata to clipboard
+      await Clipboard.setData(ClipboardData(text: jsonData));
+      
+      // Show confirmation snackbar
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Metadata for "${file.name}" copied to clipboard'),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      
+      // Also share via system share sheet
       await Share.shareXFiles(
         [XFile.fromData(
           Uint8List.fromList(jsonData.codeUnits),
@@ -1791,7 +1806,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           mimeType: 'application/json',
         )],
         subject: 'Disbox File Metadata: ${file.name}',
-        text: 'Metadata for file "${file.name}" from Disbox.',
+        text: 'Metadata for file "${file.name}" from Disbox.\n\n$jsonData',
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
