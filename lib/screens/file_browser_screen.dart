@@ -1773,15 +1773,17 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   /// Share metadata for a specific file (for advanced users)
   Future<void> _shareMetadata(DisboxFile file) async {
     try {
-      // Create JSON data for the file
+      // Create JSON data for the file - matching the format expected by importMetadataFromText
       final jsonData = jsonEncode({
+        'type': 'disbox_metadata',
         'name': file.name,
         'path': file.path,
         'isFolder': file.isFolder,
         'size': file.size,
+        'mimeType': file.mimeType,
+        'chunkIds': file.chunkMessageIds,  // Use chunkIds to match import format
         'createdAt': file.createdAt.toIso8601String(),
-        'chunkMessageIds': file.chunkMessageIds,
-        'version': '1.0',
+        'modifiedAt': file.modifiedAt.toIso8601String(),
       });
       
       // Copy metadata to clipboard
