@@ -899,16 +899,21 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         }
         _downloadNotificationId = null;
       }
-      
       // Show error notification
       if (_notificationService != null && _notificationService!.isInitialized) {
-        await _notificationService!.showTransferError(
-          fileName: fileName,
-          error: e.toString(),
-          isUpload: false,
-        );
+        try {
+          await _notificationService!.showTransferError(
+            fileName: fileName,
+            error: e.toString(),
+            isUpload: false,
+          );
+        } catch (notifError, stackTrace) {
+          // Silently ignore notification errors to prevent crashes
+          debugPrint('[FileBrowserScreen] Failed to show transfer error notification: $notifError');
+          debugPrint('[FileBrowserScreen] Stack trace: $stackTrace');
+        }
       }
-      
+
       // Ensure temp file is cleaned up on error too
       if (tempPath != null) {
         try {

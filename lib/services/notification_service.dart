@@ -387,13 +387,19 @@ class NotificationService extends ChangeNotifier {
 
     final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
 
-    await _flutterLocalNotificationsPlugin.show(
-      id,
-      isPaused ? 'Download Paused: $fileName' : 'Downloading $fileName',
-      '$percent% complete',
-      details,
-      payload: 'download:$id',
-    );
+    try {
+      await _flutterLocalNotificationsPlugin.show(
+        id,
+        isPaused ? 'Download Paused: $fileName' : 'Downloading $fileName',
+        '$percent% complete',
+        details,
+        payload: 'download:$id',
+      );
+    } catch (e, stackTrace) {
+      // Silently ignore notification errors to prevent crashes
+      debugPrint('[NotificationService] Failed to show download progress notification: $e');
+      debugPrint('[NotificationService] Stack trace: $stackTrace');
+    }
 
     return id;
   }
@@ -488,13 +494,19 @@ class NotificationService extends ChangeNotifier {
 
     final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
 
-    await _flutterLocalNotificationsPlugin.show(
-      _generateNotificationId(),
-      '$actionType Failed: $fileName',
-      error,
-      details,
-      payload: '${isUpload ? "upload" : "download"}:error:$fileName',
-    );
+    try {
+      await _flutterLocalNotificationsPlugin.show(
+        _generateNotificationId(),
+        '$actionType Failed: $fileName',
+        error,
+        details,
+        payload: '${isUpload ? "upload" : "download"}:error:$fileName',
+      );
+    } catch (e, stackTrace) {
+      // Silently ignore notification errors to prevent crashes
+      debugPrint('[NotificationService] Failed to show transfer error notification: $e');
+      debugPrint('[NotificationService] Stack trace: $stackTrace');
+    }
   }
 
   /// Cancel a notification by ID.
