@@ -1887,8 +1887,13 @@ class DisboxService extends ChangeNotifier {
       try {
         final outFile = File(outputPath);
         if (await outFile.exists()) {
-          await outFile.delete();
-          print('[DOWNLOAD CLEANUP] Deleted partial download: $outputPath');
+          try {
+            await outFile.delete();
+            print('[DOWNLOAD CLEANUP] Deleted partial download: $outputPath');
+          } catch (deleteError) {
+            // Ignore deletion errors on Windows if file is still locked
+            print('[DOWNLOAD CLEANUP ERROR] Failed to delete partial file (may be locked): $deleteError');
+          }
         }
       } catch (cleanupError) {
         print(
@@ -2932,13 +2937,19 @@ class DisboxService extends ChangeNotifier {
         sink.add(chunk);
       }
       await sink.flush();
+      await sink.close(); // Close the sink before reading the file
       final data = await tempFile.readAsBytes();
       await tempFile.delete();
       return data;
     } catch (e) {
       await sink.close();
       if (await tempFile.exists()) {
-        await tempFile.delete();
+        try {
+          await tempFile.delete();
+        } catch (deleteError) {
+          // Ignore deletion errors on Windows if file is still locked
+          print('[DisboxService DEBUG] Failed to delete temp file (may be locked): $deleteError');
+        }
       }
       rethrow;
     }
