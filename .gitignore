@@ -9,9 +9,6 @@ __pycache__/
 *.so
 *.a
 *.out
-*.log
-*.tmp
-*.swp
 
 # Dependencies
 node_modules/
@@ -21,26 +18,37 @@ venv/
 .env.local
 .env.*
 
-# Editors
-.vscode/
-.idea/
-
-# Build directories
+# Build outputs
 dist/
 build/
 target/
-.gradle/
+*.jar
+*.war
+*.zip
+*.tar.gz
 
-# Coverage and testing
-.coverage
-coverage/
-htmlcov/
-.mypy_cache/
-.pytest_cache/
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Editors
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
 
 # System files
 .DS_Store
 Thumbs.db
+.git/
+
+# Coverage reports
+coverage/
+htmlcov/
+*.coverage
 
 # Compressed files
 *.zip
@@ -61,3 +69,14 @@ Thumbs.db
 *.Z
 *.lz
 *.lzo
+
+# Dart/Flutter specific
+.dart_tool/
+.packages
+.pub-cache/
+pubspec.lock
+*.g.dart
+*.freezed.dart
+
+# Original rules preserved
+*.log

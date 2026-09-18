@@ -862,24 +862,47 @@ class DisboxService extends ChangeNotifier {
         // Fallback to the stored base metadata if no batch has name/path
         baseMetadata ??= fileBaseMetadata[fileId];
         
-        // Validate that we have required fields
-        if (baseMetadata == null || baseMetadata['name'] == null || baseMetadata['path'] == null) {
-          print('[IMPORT ERROR] Missing required name or path for file $fileId');
-          print('[IMPORT ERROR] Available metadata keys: ${baseMetadata?.keys.toList() ?? 'null'}');
-          print('[IMPORT ERROR] Total batches: ${batches.length}');
-          for (int i = 0; i < batches.length; i++) {
-            final batch = batches[i];
-            print('[IMPORT ERROR] Batch $i: name=${batch['name']}, path=${batch['path']}, isLastBatch=${batch['isLastBatch']}, batchIndex=${batch['batchIndex']}');
+        // Validate that we have required fields - generate defaults if missing
+        String? name = baseMetadata?['name'];
+        String? path = baseMetadata?['path'];
+        
+        if (name == null || path == null) {
+          print('[IMPORT WARN] Missing name or path for file $fileId, generating defaults');
+          
+          // Generate a default name
+          if (name == null) {
+            name = 'NameMissing_$fileId';
+            print('[IMPORT WARN] Generated name: $name');
           }
-          continue; // Skip this file
+          
+          // Generate a default path (root directory)
+          if (path == null) {
+            path = '/$name';
+            print('[IMPORT WARN] Generated path: $path');
+          }
+          
+          // Update baseMetadata with generated values
+          if (baseMetadata != null) {
+            baseMetadata['name'] = name;
+            baseMetadata['path'] = path;
+          } else {
+            // Create minimal baseMetadata if completely missing
+            baseMetadata = {
+              'name': name,
+              'path': path,
+              'size': batches.first['size'],
+              'isFolder': batches.first['isFolder'] ?? false,
+              'createdAt': batches.first['createdAt'],
+            };
+          }
         }
         
         // Create merged metadata
         final mergedMetadata = {
           'type': 'disbox_metadata',
           'version': '1.0',
-          'name': baseMetadata['name'],
-          'path': baseMetadata['path'],
+          'name': name,
+          'path': path,
           'size': baseMetadata['size'],
           'mimeType': baseMetadata['mimeType'],
           'isFolder': baseMetadata['isFolder'],
