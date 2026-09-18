@@ -1,47 +1,48 @@
-# Dependencies
-.pub/
-.build/
-.dart_tool/
-
-# Logs
+# Compiled and build artifacts
+*.pyc
+__pycache__/
+*.o
+*.obj
+*.class
+*.exe
+*.dll
+*.so
+*.a
+*.out
 *.log
+*.tmp
+*.swp
 
-# Environment
+# Dependencies
+node_modules/
+venv/
+.venv/
 .env
 .env.local
-*.env.*
+.env.*
 
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Temporary files
-*.tmp
-*.temp
-*.swp
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# IDE
+# Editors
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# Distribution
+# Build directories
 dist/
 build/
+target/
+.gradle/
 
-# Cache
-__pycache__/
-*.pyc
+# Coverage and testing
+.coverage
+coverage/
+htmlcov/
 .mypy_cache/
 .pytest_cache/
 
-# Compressed
+# System files
+.DS_Store
+Thumbs.db
+
+# Compressed files
 *.zip
 *.gz
 *.tar
@@ -60,7 +61,3 @@ __pycache__/
 *.Z
 *.lz
 *.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst

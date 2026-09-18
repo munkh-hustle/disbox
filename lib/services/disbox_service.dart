@@ -850,13 +850,27 @@ class DisboxService extends ChangeNotifier {
           allChunkIds.addAll(batchChunkIds);
         }
         
-        // Get base metadata (should have name, path, etc. from last batch)
-        final baseMetadata = fileBaseMetadata[fileId]!;
+        // Get base metadata - search through all batches to find one with name/path
+        Map<String, dynamic>? baseMetadata;
+        for (final batch in batches.reversed) {
+          if (batch['name'] != null && batch['path'] != null) {
+            baseMetadata = batch;
+            break;
+          }
+        }
+        
+        // Fallback to the stored base metadata if no batch has name/path
+        baseMetadata ??= fileBaseMetadata[fileId];
         
         // Validate that we have required fields
-        if (baseMetadata['name'] == null || baseMetadata['path'] == null) {
+        if (baseMetadata == null || baseMetadata['name'] == null || baseMetadata['path'] == null) {
           print('[IMPORT ERROR] Missing required name or path for file $fileId');
-          print('[IMPORT ERROR] Available metadata keys: ${baseMetadata.keys.toList()}');
+          print('[IMPORT ERROR] Available metadata keys: ${baseMetadata?.keys.toList() ?? 'null'}');
+          print('[IMPORT ERROR] Total batches: ${batches.length}');
+          for (int i = 0; i < batches.length; i++) {
+            final batch = batches[i];
+            print('[IMPORT ERROR] Batch $i: name=${batch['name']}, path=${batch['path']}, isLastBatch=${batch['isLastBatch']}, batchIndex=${batch['batchIndex']}');
+          }
           continue; // Skip this file
         }
         
