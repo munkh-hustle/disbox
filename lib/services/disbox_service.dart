@@ -719,9 +719,8 @@ class DisboxService extends ChangeNotifier {
           _accountId = savedAccountId;
           print('[DisboxService] Loaded webhook URL from SharedPreferences, accountId: $_accountId (${stopwatch.elapsedMilliseconds}ms)');
         } else {
-          print('[DisboxService WARNING] No webhook URL found in SharedPreferences. Creating temporary account ID.');
-          // Generate a temporary account ID based on the file path for this import session
-          _accountId = _hashWebhookUrl(metadata['path'] as String);
+          print('[DisboxService WARNING] No webhook URL found in SharedPreferences. Cannot import without webhook.');
+          throw Exception('Webhook URL not configured. Please setup webhook first or load a saved account.');
         }
       }
 
