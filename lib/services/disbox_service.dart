@@ -719,9 +719,8 @@ class DisboxService extends ChangeNotifier {
           _accountId = savedAccountId;
           print('[DisboxService] Loaded webhook URL from SharedPreferences, accountId: $_accountId (${stopwatch.elapsedMilliseconds}ms)');
         } else {
-          print('[DisboxService WARNING] No webhook URL found in SharedPreferences. Creating temporary account ID.');
-          // Generate a temporary account ID based on the file path for this import session
-          _accountId = _hashWebhookUrl(metadata['path'] as String);
+          print('[DisboxService WARNING] No webhook URL found in SharedPreferences. Cannot import without webhook.');
+          throw Exception('Webhook URL not configured. Please setup webhook first or load a saved account.');
         }
       }
 
@@ -809,8 +808,17 @@ class DisboxService extends ChangeNotifier {
         groupedMetadata[fileId]!.add(metadata);
         
         // Store base metadata - prefer metadata with name/path (usually last batch)
-        if (!fileBaseMetadata.containsKey(fileId) || 
-            (metadata['name'] != null && metadata['path'] != null)) {
+        // The last batch (isLastBatch=true or batchIndex == totalBatches-1) contains name/path
+        final isLastBatch = metadata['isLastBatch'] as bool? ?? false;
+        final batchIndex = metadata['batchIndex'] as int? ?? 0;
+        final isLikelyLastBatch = isLastBatch || (totalBatches > 1 && batchIndex == totalBatches - 1);
+        
+        if (!fileBaseMetadata.containsKey(fileId)) {
+          fileBaseMetadata[fileId] = metadata;
+        } else if (isLikelyLastBatch || 
+            (metadata['name'] != null && metadata['path'] != null && 
+             (fileBaseMetadata[fileId]!['name'] == null || fileBaseMetadata[fileId]!['path'] == null))) {
+          // Replace with metadata that has name/path if current one doesn't
           fileBaseMetadata[fileId] = metadata;
         }
         
@@ -842,15 +850,59 @@ class DisboxService extends ChangeNotifier {
           allChunkIds.addAll(batchChunkIds);
         }
         
-        // Get base metadata (should have name, path, etc. from last batch)
-        final baseMetadata = fileBaseMetadata[fileId]!;
+        // Get base metadata - search through all batches to find one with name/path
+        Map<String, dynamic>? baseMetadata;
+        for (final batch in batches.reversed) {
+          if (batch['name'] != null && batch['path'] != null) {
+            baseMetadata = batch;
+            break;
+          }
+        }
+        
+        // Fallback to the stored base metadata if no batch has name/path
+        baseMetadata ??= fileBaseMetadata[fileId];
+        
+        // Validate that we have required fields - generate defaults if missing
+        String? name = baseMetadata?['name'];
+        String? path = baseMetadata?['path'];
+        
+        if (name == null || path == null) {
+          print('[IMPORT WARN] Missing name or path for file $fileId, generating defaults');
+          
+          // Generate a default name
+          if (name == null) {
+            name = 'NameMissing_$fileId';
+            print('[IMPORT WARN] Generated name: $name');
+          }
+          
+          // Generate a default path (root directory)
+          if (path == null) {
+            path = '/$name';
+            print('[IMPORT WARN] Generated path: $path');
+          }
+          
+          // Update baseMetadata with generated values
+          if (baseMetadata != null) {
+            baseMetadata['name'] = name;
+            baseMetadata['path'] = path;
+          } else {
+            // Create minimal baseMetadata if completely missing
+            baseMetadata = {
+              'name': name,
+              'path': path,
+              'size': batches.first['size'],
+              'isFolder': batches.first['isFolder'] ?? false,
+              'createdAt': batches.first['createdAt'],
+            };
+          }
+        }
         
         // Create merged metadata
         final mergedMetadata = {
           'type': 'disbox_metadata',
           'version': '1.0',
-          'name': baseMetadata['name'],
-          'path': baseMetadata['path'],
+          'name': name,
+          'path': path,
           'size': baseMetadata['size'],
           'mimeType': baseMetadata['mimeType'],
           'isFolder': baseMetadata['isFolder'],
