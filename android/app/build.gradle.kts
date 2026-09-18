@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -5,39 +8,44 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// 1. Directly read local.properties to bypass Flutter plugin caching issues
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(FileInputStream(localPropertiesFile))
+}
+
+// 2. Get the NDK version from local.properties, or fallback to the version you confirmed is installed
+val customNdkVersion = localProperties.getProperty("flutter.ndkVersion") ?: "30.0.16248370"
+
 android {
     namespace = "com.example.flutter_disbox"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    
+    // 3. Apply the safely resolved NDK version
+    ndkVersion = customNdkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
         isCoreLibraryDesugaringEnabled = true
     }
-
+    
     kotlinOptions {
         jvmTarget = JavaVersion.VERSION_21.toString()
     }
-
+    
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.flutter_disbox"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        
-        // Required for flutter_local_notifications
         multiDexEnabled = true
     }
-
+    
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
