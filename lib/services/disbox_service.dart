@@ -808,8 +808,17 @@ class DisboxService extends ChangeNotifier {
         groupedMetadata[fileId]!.add(metadata);
         
         // Store base metadata - prefer metadata with name/path (usually last batch)
-        if (!fileBaseMetadata.containsKey(fileId) || 
-            (metadata['name'] != null && metadata['path'] != null)) {
+        // The last batch (isLastBatch=true or batchIndex == totalBatches-1) contains name/path
+        final isLastBatch = metadata['isLastBatch'] as bool? ?? false;
+        final batchIndex = metadata['batchIndex'] as int? ?? 0;
+        final isLikelyLastBatch = isLastBatch || (totalBatches > 1 && batchIndex == totalBatches - 1);
+        
+        if (!fileBaseMetadata.containsKey(fileId)) {
+          fileBaseMetadata[fileId] = metadata;
+        } else if (isLikelyLastBatch || 
+            (metadata['name'] != null && metadata['path'] != null && 
+             (fileBaseMetadata[fileId]!['name'] == null || fileBaseMetadata[fileId]!['path'] == null))) {
+          // Replace with metadata that has name/path if current one doesn't
           fileBaseMetadata[fileId] = metadata;
         }
         
@@ -843,6 +852,13 @@ class DisboxService extends ChangeNotifier {
         
         // Get base metadata (should have name, path, etc. from last batch)
         final baseMetadata = fileBaseMetadata[fileId]!;
+        
+        // Validate that we have required fields
+        if (baseMetadata['name'] == null || baseMetadata['path'] == null) {
+          print('[IMPORT ERROR] Missing required name or path for file $fileId');
+          print('[IMPORT ERROR] Available metadata keys: ${baseMetadata.keys.toList()}');
+          continue; // Skip this file
+        }
         
         // Create merged metadata
         final mergedMetadata = {
