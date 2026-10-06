@@ -3,7 +3,7 @@ import java.io.FileInputStream
 
 plugins {
     id("com.android.application")
-    id("kotlin-android")
+    id("org.jetbrains.kotlin.android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -30,11 +30,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
         isCoreLibraryDesugaringEnabled = true
     }
-    
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_21.toString()
-    }
-    
+
     defaultConfig {
         applicationId = "com.example.flutter_disbox"
         minSdk = flutter.minSdkVersion
@@ -57,4 +53,12 @@ android {
 
 flutter {
     source = "../.."
+}
+
+kotlin {
+    // compilerOptions DSL: replaces the deprecated android.kotlinOptions { jvmTarget = ... }
+    // block, which fails the build under AGP 9 / Kotlin Android plugin 2.x.
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
+    }
 }
