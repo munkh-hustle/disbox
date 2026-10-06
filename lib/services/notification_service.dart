@@ -102,7 +102,7 @@ class NotificationService extends ChangeNotifier {
       );
 
       await _flutterLocalNotificationsPlugin.initialize(
-        initSettings,
+        settings: initSettings,
         onDidReceiveNotificationResponse: _onNotificationResponse,
       );
 
@@ -308,10 +308,10 @@ class NotificationService extends ChangeNotifier {
     final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
 
     await _flutterLocalNotificationsPlugin.show(
-      id,
-      isPaused ? 'Upload Paused: $fileName' : 'Uploading $fileName',
-      '$percent% complete',
-      details,
+      id: id,
+      title: isPaused ? 'Upload Paused: $fileName' : 'Uploading $fileName',
+      body: '$percent% complete',
+      notificationDetails: details,
       payload: 'upload:$id',
     );
 
@@ -389,10 +389,10 @@ class NotificationService extends ChangeNotifier {
 
     try {
       await _flutterLocalNotificationsPlugin.show(
-        id,
-        isPaused ? 'Download Paused: $fileName' : 'Downloading $fileName',
-        '$percent% complete',
-        details,
+        id: id,
+        title: isPaused ? 'Download Paused: $fileName' : 'Downloading $fileName',
+        body: '$percent% complete',
+        notificationDetails: details,
         payload: 'download:$id',
       );
     } catch (e, stackTrace) {
@@ -447,10 +447,10 @@ class NotificationService extends ChangeNotifier {
     final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
 
     await _flutterLocalNotificationsPlugin.show(
-      _generateNotificationId(),
-      '$actionType: $fileName',
-      message,
-      details,
+      id: _generateNotificationId(),
+      title: '$actionType: $fileName',
+      body: message,
+      notificationDetails: details,
       payload: '${isUpload ? "upload" : "download"}:complete:$fileName',
     );
   }
@@ -496,10 +496,10 @@ class NotificationService extends ChangeNotifier {
 
     try {
       await _flutterLocalNotificationsPlugin.show(
-        _generateNotificationId(),
-        '$actionType Failed: $fileName',
-        error,
-        details,
+        id: _generateNotificationId(),
+        title: '$actionType Failed: $fileName',
+        body: error,
+        notificationDetails: details,
         payload: '${isUpload ? "upload" : "download"}:error:$fileName',
       );
     } catch (e, stackTrace) {
@@ -513,7 +513,7 @@ class NotificationService extends ChangeNotifier {
   Future<void> cancelNotification(int id) async {
     if (!_isInitialized) return;
     try {
-      await _flutterLocalNotificationsPlugin.cancel(id);
+      await _flutterLocalNotificationsPlugin.cancel(id: id);
     } catch (e, stackTrace) {
       // Silently ignore cancellation errors to prevent crashes
       // This can happen with certain Android versions due to type parameter issues

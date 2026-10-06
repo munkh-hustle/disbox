@@ -260,11 +260,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       setState(() => _isPickingFile = true);
       
       // Pick file from device
-      FilePickerResult? result;
+      PlatformFile? pickedFile;
       try {
-        result = await FilePicker.pickFiles(
+        pickedFile = await FilePicker.pickFile(
           type: FileType.any,
-          allowMultiple: false,
         );
       } catch (e) {
         // Handle file picker errors gracefully
@@ -281,19 +280,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         return;
       }
 
-      if (result == null || result.files.isEmpty) {
+      if (pickedFile == null || pickedFile.path == null) {
         setState(() => _isPickingFile = false);
         return;
       }
 
-      final filePath = result.files.first.path;
-      if (filePath == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Unable to access file path')),
-        );
-        setState(() => _isPickingFile = false);
-        return;
-      }
+      final filePath = pickedFile.path!;
 
       final file = File(filePath);
       
@@ -331,7 +323,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       }
       
       // Create a controller for progress updates
-      final fileName = result.files.first.name;
+      final fileName = pickedFile.name;
       
       // Show initial notification that upload is starting
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1570,23 +1562,19 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   Future<void> _importMetadataFromFile() async {
     try {
       // Pick the config file
-      final result = await FilePicker.pickFiles(
+      final pickedFile = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: ['json'],
-        allowMultiple: false,
       );
-      
-      if (result == null || result.files.isEmpty) {
-        return;
-      }
-      
-      final filePath = result.files.first.path;
-      if (filePath == null) {
+
+      if (pickedFile == null || pickedFile.path == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Unable to access selected file')),
         );
         return;
       }
+
+      final filePath = pickedFile.path!;
       
       // Read and parse the file with explicit UTF-8 encoding to support international characters
       final fileContent = await File(filePath).readAsString(encoding: utf8);
