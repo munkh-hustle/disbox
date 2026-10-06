@@ -1,6 +1,3 @@
-import java.util.Properties
-import java.io.FileInputStream
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -8,22 +5,15 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// 1. Directly read local.properties to bypass Flutter plugin caching issues
-val localProperties = Properties()
-val localPropertiesFile = rootProject.file("local.properties")
-if (localPropertiesFile.exists()) {
-    localProperties.load(FileInputStream(localPropertiesFile))
-}
-
-// 2. Get the NDK version from local.properties, or fallback to the version you confirmed is installed
-val customNdkVersion = localProperties.getProperty("flutter.ndkVersion") ?: "30.0.16248370"
-
+// Q&D: This project has no native (C/C++) code and no dependency requires the NDK,
+// so we don't force a specific ndkVersion. AGP would otherwise try to auto-download
+// an NDK via sdkmanager, which fails because sdkmanager is deprecated/moved in recent
+// Android SDKs ("Package ndk not found"). If you ever add native code, either install
+// an NDK manually (Android Studio > SDK Manager > SDK Tools > NDK) or set
+// android.ndkVersion to that installed version here.
 android {
     namespace = "com.example.flutter_disbox"
     compileSdk = flutter.compileSdkVersion
-    
-    // 3. Apply the safely resolved NDK version
-    ndkVersion = customNdkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
