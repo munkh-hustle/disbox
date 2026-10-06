@@ -117,13 +117,13 @@ class _ImportScreenState extends State<ImportScreen> {
 
     try {
       // Pick JSON file
-      FilePickerResult? result = await FilePicker.pickFiles(
+      final pickedFile = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: ['json'],
       );
 
-      if (result != null && result.files.single.path != null) {
-        final file = File(result.files.single.path!);
+      if (pickedFile != null && pickedFile.path != null) {
+        final file = File(pickedFile.path!);
         
         // Import config using DisboxService
         final service = DisboxService();
