@@ -513,7 +513,7 @@ class NotificationService extends ChangeNotifier {
   Future<void> cancelNotification(int id) async {
     if (!_isInitialized) return;
     try {
-      await _flutterLocalNotificationsPlugin.cancel(id);
+      await _flutterLocalNotificationsPlugin.cancel(id: id);
     } catch (e, stackTrace) {
       // Silently ignore cancellation errors to prevent crashes
       // This can happen with certain Android versions due to type parameter issues
